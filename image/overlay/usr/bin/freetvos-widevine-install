@@ -33,10 +33,20 @@ case "$ARCH" in
     echo "Fetching Google Chrome to obtain the Widevine module..."
     curl -fsSL -o "$TMP/chrome.deb" \
       "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb"
-    ( cd "$TMP" && ar x chrome.deb && tar -xf data.tar.* )
-    SRC="$(find "$TMP" -name libwidevinecdm.so -print -quit)"
-    [ -n "$SRC" ] || die "No CDM found inside the Chrome package."
-    MANIFEST="$(find "$TMP" -path '*WidevineCdm/manifest.json' -print -quit)"
+
+    # Unpacked with a small stdlib reader rather than ar. Fedora ships neither
+    # ar, bsdtar nor dpkg-deb, so this path would have failed outright, and
+    # installing binutils would put a toolchain on every television for one
+    # optional step.
+    python3 /usr/share/freetvos/widevine/extract-deb.py \
+      "$TMP/chrome.deb" libwidevinecdm.so "$TMP/cdm" >/dev/null \
+      || die "No CDM found inside the Chrome package."
+    python3 /usr/share/freetvos/widevine/extract-deb.py \
+      "$TMP/chrome.deb" manifest.json "$TMP/cdm" >/dev/null 2>&1 || true
+
+    SRC="$TMP/cdm/libwidevinecdm.so"
+    [ -f "$SRC" ] || die "No CDM found inside the Chrome package."
+    MANIFEST="$TMP/cdm/manifest.json"
     ;;
 
   aarch64|arm64)
