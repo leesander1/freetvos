@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# Choose which applications appear on the television.
+#
+# Bigscreen builds its grid from every installed desktop entry, so a package
+# that happens to ship one lands on your TV whether it belongs there or not.
+#
+# This drives Bigscreen's own blocklist rather than writing NoDisplay overrides.
+# The model does filter on NoDisplay, but it queries through KApplicationTrader
+# and the cached service database, so a user-level override does not reliably
+# reach it; setting one and restarting the shell left the entry on screen. The
+# blocklist is read straight from config on every query and is what the
+# on-screen "hide" action itself writes, so it takes effect immediately.
+#
+#   file : ~/.config/applications-blacklistrc
+#   group: [Applications]
+#   key  : blacklist, a comma-separated list of desktop entry names
+set -euo pipefail
+
+CONF="${FREETVOS_APPS_CONF:-/etc/freetvos/apps.conf}"
+SYS_DIR=/usr/share/applications
+BL_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/applications-blacklistrc"
+
+usage() {
+  cat <<'USAGE'
+freetvos-apps list            show every entry and whether it is visible
+freetvos-apps hide <id>...    hide entries now
+freetvos-apps show <id>...    stop hiding entries now
+freetvos-apps apply           re-apply /etc/freetvos/apps.conf
+USAGE
+}
+
+read_blacklist() {
+  [ -f "$BL_FILE" ] || return 0
+  sed -n 's/^blacklist=//p' "$BL_FILE" | tr ',' '\n' | sed '/^$/d'
+}
+
+write_blacklist() {
+  # Rewrite the whole file. It holds one key, so preserving unrelated content
+  # would be pretending at a generality this format does not have.
+  local list; list="$(sort -u | paste -sd, -)"
+  install -d -m 0755 "$(dirname "$BL_FILE")"
+  printf '[Applications]\nblacklist=%s\n' "$list" > "$BL_FILE"
+  # kbuildsycoca is not needed for the blocklist itself, but a newly installed
+  # entry, a pin for instance, still needs the service cache refreshed.
+  command -v kbuildsycoca6 >/dev/null 2>&1 && kbuildsycoca6 >/dev/null 2>&1 || true
+}
+
+entry_name() { grep -m1 '^Name=' "$1" 2>/dev/null | cut -d= -f2-; }
+
+cmd_list() {
+  local hidden; hidden="$(read_blacklist | tr '\n' ' ')"
+  printf '%-36s %-8s %s\n' "ID" "STATE" "NAME"
+  for f in "$SYS_DIR"/*.desktop; do
+    grep -q '^Type=Application' "$f" || continue
+    grep -q '^NoDisplay=true' "$f" && continue
+    local id state
+    id="$(basename "$f" .desktop)"
+    state=visible
+    case " $hidden " in *" $id "*) state=hidden ;; esac
+    printf '%-36s %-8s %s\n' "$id" "$state" "$(entry_name "$f")"
+  done | sort -k2,2 -k1,1
+}
+
+cmd_hide() { { read_blacklist; printf '%s\n' "$@"; } | write_blacklist; }
+
+cmd_show() {
+  local keep; keep="$(read_blacklist)"
+  for id in "$@"; do keep="$(printf '%s\n' "$keep" | grep -vxF "$id" || true)"; done
+  printf '%s\n' "$keep" | sed '/^$/d' | write_blacklist
+}
+
+cmd_apply() {
+  [ -r "$CONF" ] || { echo "no config at $CONF" >&2; exit 1; }
+  HIDE=""; SHOW=""
+  # shellcheck disable=SC1090
+  . "$CONF"
+  local wanted=""
+  for id in $HIDE; do
+    case " $SHOW " in *" $id "*) continue ;; esac
+    wanted="$wanted$id"$'\n'
+  done
+  printf '%s' "$wanted" | sed '/^$/d' | write_blacklist
+  echo "blocklist written to $BL_FILE"
+  read_blacklist | sed 's/^/  hidden: /'
+}
+
+case "${1:-}" in
+  list)  cmd_list ;;
+  apply) cmd_apply ;;
+  hide)  shift; cmd_hide "$@"; echo "hid: $*" ;;
+  show)  shift; cmd_show "$@"; echo "showing: $*" ;;
+  *)     usage; exit 2 ;;
+esac

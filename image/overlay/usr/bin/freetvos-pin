@@ -1,0 +1,221 @@
+#!/usr/bin/env bash
+# Pin a show, film or deep link to the home screen, with real artwork.
+#
+# A pin is a deep link into a service that already has a tile, plus a poster.
+# It reuses the same Chromium wrapper the service tile uses, so the profile,
+# the user agent and the Widevine wiring are all shared: a pin is a shortcut
+# into an app, not a second copy of it.
+#
+# What this cannot do is show real "continue watching" progress for Netflix,
+# Disney+ or Hulu. None of them publish an API, and the resume position lives
+# inside the service. Opening the deep link lands on the title's own page,
+# which is where those services offer their own Resume button. Plex and
+# Jellyfin do publish APIs and could drive a genuine progress row; that is a
+# separate feature and is not built yet.
+set -euo pipefail
+
+# Everything a pin creates lives in the user's own XDG directories, never in
+# /usr. Under bootc /usr is a read-only image, so writing artwork or desktop
+# entries there fails outright, and anything that did land there would be
+# discarded by the next update. These paths also mean pins need no root.
+DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+CONF_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+
+PINS_DIR="${FREETVOS_PINS_DIR:-$CONF_HOME/freetvos/pins.d}"
+# Posters are referenced by absolute path, not through the icon theme, so this
+# is a plain directory rather than a hicolor tree. Services serve JPEG, and the
+# icon theme spec only indexes PNG, SVG and XPM: a JPEG filed as .png is a lie
+# that some loaders see through and refuse. A desktop entry may name an icon by
+# absolute path, which accepts any format Qt can decode.
+ICON_DIR="${FREETVOS_ICON_DIR:-$DATA_HOME/freetvos/posters}"
+APPS_DIR="${FREETVOS_PIN_APPS_DIR:-$DATA_HOME/applications}"
+CONF="${FREETVOS_TMDB_CONF:-/etc/freetvos/tmdb.conf}"
+
+die() { echo "$*" >&2; exit 1; }
+slug() { echo "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]\+/-/g; s/^-//; s/-$//'; }
+
+usage() {
+  cat <<'USAGE'
+freetvos-pin add --name NAME --app APP --url URL [--image URL] [--tmdb QUERY]
+freetvos-pin list
+freetvos-pin remove <id>
+
+  --app    which service tile to open through: plex, netflix, appletv, ...
+  --url    the deep link, e.g. https://www.netflix.com/title/80100172
+  --image  poster to use, skipping artwork lookup entirely
+  --tmdb   look the poster up on TMDB by name instead of scraping the page
+
+Artwork, in order of preference:
+  1. --image, used as given
+  2. --tmdb, if an api key is set in /etc/freetvos/tmdb.conf
+  3. the page's own og:image, which needs no key and usually just works
+USAGE
+}
+
+# ---------------------------------------------------------------- artwork ---
+
+fetch_og_image() {
+  # A service's title page advertises its own poster for link previews, which
+  # is the same picture we want and needs no API key or account.
+  local url="$1"
+  curl -fsSL --max-time 20 \
+    -A 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' \
+    "$url" 2>/dev/null \
+  | grep -oiE '<meta[^>]+property=["'"'"']og:image["'"'"'][^>]*>' \
+  | head -1 \
+  | grep -oiE 'content=["'"'"'][^"'"'"']+' \
+  | sed 's/^content=.//' || true
+}
+
+fetch_tmdb_image() {
+  local query="$1" key=""
+  [ -r "$CONF" ] && . "$CONF"
+  key="${TMDB_API_KEY:-}"
+  [ -n "$key" ] || return 1
+  local enc; enc="$(printf '%s' "$query" | sed 's/ /%20/g')"
+  local path
+  path="$(curl -fsSL --max-time 20 \
+    "https://api.themoviedb.org/3/search/multi?api_key=$key&query=$enc" 2>/dev/null \
+    | python3 -c '
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+for r in d.get("results", []):
+    p = r.get("poster_path") or r.get("profile_path")
+    if p:
+        print(p); break
+' 2>/dev/null)"
+  [ -n "$path" ] || return 1
+  echo "https://image.tmdb.org/t/p/w500$path"
+}
+
+# -------------------------------------------------------------------- add ---
+
+cmd_add() {
+  local name="" app="" url="" image="" tmdb=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --name)  name="$2"; shift 2 ;;
+      --app)   app="$2"; shift 2 ;;
+      --url)   url="$2"; shift 2 ;;
+      --image) image="$2"; shift 2 ;;
+      --tmdb)  tmdb="$2"; shift 2 ;;
+      *) die "unknown option: $1" ;;
+    esac
+  done
+  [ -n "$name" ] || die "--name is required"
+  [ -n "$app" ]  || die "--app is required"
+  [ -n "$url" ]  || die "--url is required"
+  [ -r "/usr/share/freetvos/webapps/$app.app" ] \
+    || die "no such app: $app. See /usr/share/freetvos/webapps/"
+
+  local id; id="$(slug "$name")"
+  local icon="freetvos-pin-$id"
+
+  # TMDB first whenever a key is configured. Scraping the service's own page
+  # looks tidier because it needs no key, but it is not dependable: Netflix
+  # serves a generic gate page with no image metadata at all unless the request
+  # carries a session, so the poster you get depends on which page it felt like
+  # returning. TMDB is a real API and answers the same way every time.
+  if [ -z "$image" ]; then
+    image="$(fetch_tmdb_image "${tmdb:-$name}" || true)"
+    [ -n "$image" ] && echo "artwork from TMDB"
+  fi
+  if [ -z "$image" ]; then
+    image="$(fetch_og_image "$url" || true)"
+    [ -n "$image" ] && echo "artwork from the page's own preview image"
+  fi
+  if [ -z "$image" ]; then
+    echo "No artwork found." >&2
+    if ! grep -qs '^TMDB_API_KEY=' "$CONF"; then
+      echo "Set a free TMDB key in $CONF for reliable posters." >&2
+    fi
+  fi
+
+  install -d -m 0755 "$ICON_DIR"
+  # curl reports a missing or unwritable target as a write error rather than a
+  # path error, so check the directory itself before blaming the download.
+  [ -w "$ICON_DIR" ] || die "cannot write artwork to $ICON_DIR"
+
+  local icon_ref="video-television"   # themed fallback
+  if [ -n "$image" ]; then
+    local tmp; tmp="$(mktemp)"
+    if curl -fsSL --max-time 30 -o "$tmp" "$image"; then
+      # Name the file for what it actually is, from its magic bytes, rather
+      # than assuming the extension in the URL.
+      local ext=png
+      case "$(head -c 3 "$tmp" | od -An -tx1 | tr -d ' ')" in
+        ffd8ff) ext=jpg ;;
+        89504e) ext=png ;;
+        524946) ext=webp ;;
+      esac
+      mv "$tmp" "$ICON_DIR/$icon.$ext"
+      # mktemp creates 0600; the poster is artwork, not a secret, and the shell
+      # may read it as a different user than the one that pinned it.
+      chmod 0644 "$ICON_DIR/$icon.$ext"
+      icon_ref="$ICON_DIR/$icon.$ext"
+      echo "poster saved as $icon.$ext"
+    else
+      rm -f "$tmp"
+      echo "no artwork found; the tile will use a placeholder" >&2
+    fi
+  else
+    echo "no artwork found; the tile will use a placeholder" >&2
+  fi
+
+  install -d -m 0755 "$PINS_DIR"
+  cat > "$PINS_DIR/$id.pin" <<PIN
+NAME="$name"
+APP="$app"
+URL="$url"
+ICON="$icon_ref"
+PIN
+
+  install -d -m 0755 "$APPS_DIR"
+  cat > "$APPS_DIR/freetvos-pin-$id.desktop" <<DESK
+[Desktop Entry]
+Type=Application
+Name=$name
+Comment=Pinned on FreeTVOS
+Exec=/usr/bin/freetvos-webapp $app $url
+Icon=$icon_ref
+Categories=AudioVideo;Video;
+Terminal=false
+StartupNotify=true
+X-KDE-FormFactor=tv
+X-FreeTVOS-Pin=$id
+DESK
+
+  command -v kbuildsycoca6 >/dev/null 2>&1 && kbuildsycoca6 --noincremental >/dev/null 2>&1 || true
+  echo "pinned \"$name\" via $app"
+}
+
+cmd_list() {
+  [ -d "$PINS_DIR" ] || { echo "no pins"; return; }
+  local found=0
+  for f in "$PINS_DIR"/*.pin; do
+    [ -e "$f" ] || continue
+    found=1
+    NAME=""; APP=""; URL=""
+    . "$f"
+    printf '%-22s %-12s %s\n' "$(basename "$f" .pin)" "$APP" "$NAME"
+  done
+  [ "$found" = 1 ] || echo "no pins"
+}
+
+cmd_remove() {
+  local id="${1:-}"; [ -n "$id" ] || die "which pin?"
+  rm -f "$PINS_DIR/$id.pin" "$APPS_DIR/freetvos-pin-$id.desktop"
+  rm -f "$ICON_DIR/freetvos-pin-$id".*
+  command -v kbuildsycoca6 >/dev/null 2>&1 && kbuildsycoca6 --noincremental >/dev/null 2>&1 || true
+  echo "removed $id"
+}
+
+case "${1:-}" in
+  add)    shift; cmd_add "$@" ;;
+  list)   cmd_list ;;
+  remove) shift; cmd_remove "$@" ;;
+  *)      usage; exit 2 ;;
+esac

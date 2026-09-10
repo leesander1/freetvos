@@ -32,4 +32,12 @@ lockBeforeTurnOff=0
 EOF
 
 mkdir -p "$HOME/.local/share/freetvos/webapps"
+
+# Curate the tile grid. Bigscreen shows every installed desktop entry, so
+# without this the television comes up with a menu editor and an emoji picker
+# sitting next to Netflix.
+if command -v freetvos-apps >/dev/null 2>&1; then
+  freetvos-apps apply >/dev/null 2>&1 || true
+fi
+
 touch "$STAMP"

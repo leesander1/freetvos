@@ -45,6 +45,43 @@ ssh -p 2222 tv@localhost
 | `cast/dial/` | DIAL receiver, for phone-initiated launches |
 | `tools/` | Build, disk, run, screenshot |
 | `docs/ASSETS.md` | What artwork is needed, at what sizes |
+| `docs/BRANDING.md` | Every Fedora and KDE mark between power-on and the home screen |
+| `docs/REMOTE.md` | Using a phone as the remote |
+| `docs/MULTIVIEW.md` | Split-view design, costs and suggested order |
+
+## Curating the home screen
+
+The grid is built from installed desktop entries, so packages put their own
+applications on your television. `/etc/freetvos/apps.conf` lists what to hide,
+and the build applies it, so a fresh image comes up already curated rather than
+needing a first-run cleanup.
+
+At runtime, `freetvos-apps list` shows every entry and its state. Changing the
+list means a rebuild: hiding is done by setting NoDisplay in the shipped entry,
+which is the only mechanism that reliably reaches Bigscreen's model.
+
+## Pinning a show
+
+A pin is a deep link into a service that already has a tile, with real artwork.
+It runs through that service's own wrapper, so it shares the profile, the user
+agent and the Widevine wiring rather than becoming a half-configured copy.
+
+```bash
+freetvos-pin add --name "Stranger Things" --app netflix \
+  --url "https://www.netflix.com/title/80057281"
+```
+
+Artwork comes from TMDB when a free key is set in `/etc/freetvos/tmdb.conf`,
+and otherwise from the linked page's own preview image. Set the key: scraping
+is a fallback, not a plan. Netflix serves a generic gate page with no image
+metadata unless the request carries a session, so what you get depends on which
+page it felt like returning.
+
+What a pin cannot do is show real "continue watching" progress. Netflix,
+Disney+ and Hulu publish no API and the resume position lives inside the
+service, so the deep link lands on the title's own page where their own Resume
+button is. Plex and Jellyfin do publish APIs and could drive a genuine progress
+row; that is a separate feature and is not built.
 
 ## Adding a service
 
@@ -108,11 +145,10 @@ genuinely supported through UxPlay, including mirroring.
 
 ## Known defects
 
-**Desktop applications clutter the tile row.** Chromium, the emoji selector
-and other packaged desktop apps appear on the home screen alongside the
-streaming services, because Bigscreen builds its grid from every installed
-desktop entry. The fix is a set of `NoDisplay=true` overrides in
-`/usr/share/applications` for entries that have no business on a television.
+**Resolution is capped at 720p on the DRM services, and nothing changes
+that.** Netflix, Disney+ and Hulu pick quality from the Widevine robustness
+level, which is L3 on any Linux device. That decision is made on their servers.
+YouTube, YouTube TV and Plex are not capped this way and do reach 1080p.
 
 **Every tile icon is blank.** The desktop entries already reference the right
 names, `freetvos-netflix` and so on, so the artwork only has to be drawn and
@@ -130,3 +166,7 @@ current value and controlling file for each.
 - The DIAL receiver answers discovery and returns valid app state, but has
   never been driven by a real phone.
 - x86_64 has never been built. `make build ARCH=amd64` should work.
+- Split view across two or four panes with audio following focus. Designed in
+  `docs/MULTIVIEW.md`, not started.
+- Real continue-watching from Plex and Jellyfin, which unlike the DRM services
+  do publish the necessary APIs.

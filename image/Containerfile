@@ -134,7 +134,9 @@ COPY tools/vendor/LICENSE.pivine /usr/share/freetvos/widevine/LICENSE.pivine
 RUN chmod 0755 /usr/bin/freetvos-webapp /usr/bin/freetvos-firstboot \
               /usr/bin/freetvos-widevine-install /usr/bin/freetvos-ensure-groups \
               /usr/bin/freetvos-widevine-check \
- && python3 /usr/share/freetvos/generate-desktop-entries.py
+              /usr/bin/freetvos-apps /usr/bin/freetvos-pin \
+ && python3 /usr/share/freetvos/generate-desktop-entries.py \
+ && python3 /usr/share/freetvos/curate-apps.py
 
 # ---------------------------------------------------------------------------
 # Services. sddm auto-logs into the Bigscreen session; a TV has no login screen.

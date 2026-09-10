@@ -12,14 +12,19 @@
 set -euo pipefail
 
 APP_ID="${1:-}"
+# An optional deep link, used by pinned tiles. It rides on the service's own
+# definition, so a pin inherits that service's profile, user agent and CDM
+# wiring instead of becoming a second, half-configured copy of it.
+URL_OVERRIDE="${2:-}"
 APP_DIR="/usr/share/freetvos/webapps"
-[ -n "$APP_ID" ] || { echo "usage: freetvos-webapp <app-id>" >&2; exit 2; }
+[ -n "$APP_ID" ] || { echo "usage: freetvos-webapp <app-id> [url]" >&2; exit 2; }
 APP_FILE="$APP_DIR/$APP_ID.app"
 [ -r "$APP_FILE" ] || { echo "no such app: $APP_ID" >&2; exit 3; }
 
 NAME=""; URL=""; DRM="no"; USER_AGENT=""; SPATIAL_NAV="no"
 # shellcheck disable=SC1090
 . "$APP_FILE"
+[ -n "$URL_OVERRIDE" ] && URL="$URL_OVERRIDE"
 [ -n "$URL" ] || { echo "$APP_ID: no URL defined" >&2; exit 4; }
 
 # Per-app profile. Isolating them keeps one service's cookies, and one
@@ -27,18 +32,45 @@ NAME=""; URL=""; DRM="no"; USER_AGENT=""; SPATIAL_NAV="no"
 PROFILE="${XDG_DATA_HOME:-$HOME/.local/share}/freetvos/webapps/$APP_ID"
 mkdir -p "$PROFILE"
 
+# Panel geometry. Streaming services choose quality from the size of the
+# player, so a viewport smaller than the panel silently costs resolution.
+read -r PANEL_W PANEL_H < <(
+  kscreen-doctor -o 2>/dev/null \
+    | grep -oE '[0-9]{3,5}x[0-9]{3,5}' \
+    | head -1 | tr 'x' ' '
+)
+PANEL_W="${PANEL_W:-1920}"
+PANEL_H="${PANEL_H:-1080}"
+
 FLAGS=(
   "--app=$URL"
   "--user-data-dir=$PROFILE"
   "--class=freetvos-$APP_ID"
 
+  # Without this Chromium picks up a Wayland output scale and halves the CSS
+  # viewport: a 1920x1080 panel reported itself as 945x1060, which is enough on
+  # its own to keep YouTube below 1080p. Pinning the scale to 1 makes one CSS
+  # pixel one panel pixel.
+  "--force-device-scale-factor=1"
+  "--window-size=$PANEL_W,$PANEL_H"
+
+  # A television has no pointer, so a scrollbar is decoration that cannot be
+  # used. YouTube TV drew one down the right edge.
+  "--hide-scrollbars"
+
   # Wayland natively; going through XWayland costs a copy per frame and
   # breaks fractional scaling on 4K panels.
   "--ozone-platform=wayland"
-  "--enable-features=UseOzonePlatform,WaylandWindowDecorations,VaapiVideoDecoder,AcceleratedVideoDecodeLinuxGL"
 
   "--start-fullscreen"
   "--autoplay-policy=no-user-gesture-required"
+
+  # One --enable-features only: Chromium honours the last occurrence and
+  # silently discards every earlier one, so a second flag would quietly turn
+  # off Wayland and hardware decode.
+  # DocumentPictureInPictureAPI adds the newer PiP that can host arbitrary
+  # content, alongside the video-element PiP that is on by default.
+  "--enable-features=UseOzonePlatform,WaylandWindowDecorations,VaapiVideoDecoder,AcceleratedVideoDecodeLinuxGL,DocumentPictureInPictureAPI"
 
   # No Cast sender: this device is a receiver, and the menu entry only
   # confuses a remote-driven interface.
