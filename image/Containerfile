@@ -46,6 +46,7 @@ RUN dnf install -y \
       plasma-milou \
       upower \
       kde-connect \
+      kdialog \
       mesa-libEGL \
       mesa-libGL \
       mesa-vulkan-drivers \
@@ -109,6 +110,7 @@ RUN dnf install -y --setopt=install_weak_deps=False \
       google-noto-sans-mono-fonts \
       openssh-server \
       glibc-langpack-en \
+      squashfs-tools \
  && dnf clean all
 
 # ---------------------------------------------------------------------------
@@ -122,8 +124,16 @@ COPY webapps/apps.d/ /usr/share/freetvos/webapps/
 COPY webapps/freetvos-webapp /usr/bin/freetvos-webapp
 COPY cast/dial/ /usr/share/freetvos/dial/
 
+# The ARM Widevine path needs an ELF patcher and squashfs tooling. Vendored
+# rather than fetched at install time, so the device is not downloading and
+# running a script from the internet as root. MIT licensed; see the LICENSE
+# file alongside it.
+COPY tools/vendor/widevine_patch.py /usr/share/freetvos/widevine/widevine_patch.py
+COPY tools/vendor/LICENSE.pivine /usr/share/freetvos/widevine/LICENSE.pivine
+
 RUN chmod 0755 /usr/bin/freetvos-webapp /usr/bin/freetvos-firstboot \
               /usr/bin/freetvos-widevine-install /usr/bin/freetvos-ensure-groups \
+              /usr/bin/freetvos-widevine-check \
  && python3 /usr/share/freetvos/generate-desktop-entries.py
 
 # ---------------------------------------------------------------------------
@@ -141,8 +151,9 @@ RUN systemctl enable sddm avahi-daemon bluetooth NetworkManager sshd \
 # /run/secrets and the resolver stub are podman's own bind mounts and cannot
 # be removed here, so clear only what the package installs actually left behind.
 RUN rm -rf /var/cache/* /var/log/* /var/tmp/* /tmp/* \
-      /run/dnf /run/sddm \
+      /run/dnf /run/sddm /run/tuned \
       /var/lib/dnf /var/lib/authselect/checksum \
       /var/lib/AccountsService /var/lib/geoclue \
       /var/lib/plymouth /var/spool/plymouth \
+      /var/lib/PackageKit /var/lib/tuned \
  && bootc container lint

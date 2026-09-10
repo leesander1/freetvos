@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Show on the television whether Widevine actually works.
+#
+# Served over http://localhost rather than opened as a file:// URL. EME is
+# refused on opaque origins, and a file:// page is one, so a local file test
+# reports a failure that has nothing to do with the CDM.
+set -euo pipefail
+
+PORT="${FREETVOS_CHECK_PORT:-8099}"
+DOCROOT="$(mktemp -d)"
+trap 'rm -rf "$DOCROOT"' EXIT
+
+cp /usr/share/freetvos/widevine/emecheck.html "$DOCROOT/index.html"
+chmod -R 0755 "$DOCROOT"
+
+python3 -m http.server "$PORT" --bind 127.0.0.1 --directory "$DOCROOT" >/dev/null 2>&1 &
+SRV=$!
+trap 'kill "$SRV" 2>/dev/null; rm -rf "$DOCROOT"' EXIT
+sleep 1
+
+/usr/bin/chromium-browser \
+  --ozone-platform=wayland \
+  --start-fullscreen \
+  --no-first-run \
+  --user-data-dir="${XDG_DATA_HOME:-$HOME/.local/share}/freetvos/webapps/_check" \
+  --app="http://localhost:$PORT/"

@@ -1,63 +1,141 @@
 #!/usr/bin/env bash
-# Provision the Widevine CDM into the user's data directory.
+# Provision the Widevine CDM so the DRM services will play.
 #
 # Deliberately NOT baked into the image. The CDM is proprietary and its licence
 # does not permit redistribution, so shipping it inside FreeTVOS would make the
 # image undistributable. It is fetched on the device, by the device's owner,
-# from the vendor, which is the same posture Raspberry Pi OS and LibreELEC take.
+# from Google's own servers. Raspberry Pi OS and LibreELEC take the same line.
 #
 # Expect L3 either way. L1 is hardware-backed and issued only to licensed
 # device makers, so 1080p and 4K on Netflix and Disney+ are out of reach here
 # no matter what this script does. 720p is the ceiling.
 set -euo pipefail
 
-DEST="${XDG_DATA_HOME:-$HOME/.local/share}/freetvos/widevine"
+# Installed system-wide rather than per user. /opt/google/chrome/WidevineCdm is
+# a path Chromium checks for a "bundled" CDM, and the image ships a symlink
+# from there to this directory. The alternative, a copy inside each app's
+# profile, would mean one CDM per service and a re-install every time a new
+# service is added.
+CDM_ROOT="${FREETVOS_CDM_ROOT:-/var/lib/freetvos/widevine}"
+
 ARCH="$(uname -m)"
-mkdir -p "$DEST"
+
+die() { echo "$*" >&2; exit 1; }
+
+[ "$(id -u)" -eq 0 ] || die "Run this with sudo: sudo freetvos-widevine-install"
 
 case "$ARCH" in
   x86_64)
     # Google Chrome for Linux ships the CDM, and this is the vendor's own
-    # download. No extraction from a third-party image is needed.
-    TMP="$(mktemp -d)"
-    trap 'rm -rf "$TMP"' EXIT
+    # download. No extraction from a third-party image, and no patching.
+    PLATFORM_DIR="linux_x64"
+    TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
     echo "Fetching Google Chrome to obtain the Widevine module..."
     curl -fsSL -o "$TMP/chrome.deb" \
       "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb"
     ( cd "$TMP" && ar x chrome.deb && tar -xf data.tar.* )
     SRC="$(find "$TMP" -name libwidevinecdm.so -print -quit)"
-    [ -n "$SRC" ] || { echo "No CDM found inside the Chrome package." >&2; exit 1; }
-    install -m 0644 "$SRC" "$DEST/libwidevinecdm.so"
-    echo "Installed Widevine to $DEST"
+    [ -n "$SRC" ] || die "No CDM found inside the Chrome package."
+    MANIFEST="$(find "$TMP" -path '*WidevineCdm/manifest.json' -print -quit)"
     ;;
 
   aarch64|arm64)
-    # Google publishes no general ARM64 CDM. The only working source is the
-    # module inside a ChromeOS LaCrOS image, which then needs patching before a
-    # normal glibc Chromium will load it. That extraction is fiddly and its
-    # download URLs move, so this defers to the project that tracks them rather
-    # than hardcoding a URL that will rot.
-    cat >&2 <<'MSG'
-No official ARM64 Widevine module exists.
+    PLATFORM_DIR="linux_arm64"
 
-The working method extracts the aarch64 CDM from a ChromeOS LaCrOS image and
-patches it to load against standard glibc. The pivine project tracks the
-current image locations and patch offsets:
+    # Google publishes no ARM64 Widevine for desktop Linux. The only source is
+    # the module inside a ChromeOS LaCrOS image, which is a squashfs archive
+    # served from Google's own mirror. Pinned to a known-good build: these
+    # artifacts are immutable once published, so a pin here is stable, and an
+    # unpinned "latest" would silently change what gets installed.
+    LACROS_BASE="${LACROS_BASE:-https://commondatastorage.googleapis.com/chromeos-localmirror/distfiles}"
+    LACROS_NAME="${LACROS_NAME:-chromeos-lacros-arm64-squash-zstd}"
+    LACROS_VERSION="${LACROS_VERSION:-120.0.6098.0}"
+    # Verified by downloading and loading this exact image on aarch64.
+    LACROS_SHA256="${LACROS_SHA256:-38a57cc3975af68675a1219b00354f08890ff58d0c54b690dcf5d2dd904b1576}"
 
-    https://github.com/xesco/pivine
+    # The patcher needs a glibc new enough to understand DT_RELR, and the CDM
+    # will not load at all on a 16K-page kernel, which Apple Silicon and some
+    # ARM server kernels use. Fail here with the reason rather than later with
+    # an unexplained playback error.
+    # awk, not `head -1`. head closes the pipe after one line, ldd takes
+    # SIGPIPE, and under `set -o pipefail` that aborts the whole script with
+    # status 141 before it prints anything.
+    GLIBC="$(ldd --version 2>/dev/null | awk 'NR==1{print $NF}')"
+    awk -v v="$GLIBC" 'BEGIN{split(v,a,"."); if (a[1]<2 || (a[1]==2 && a[2]<35)) exit 1}' \
+      || die "glibc $GLIBC is too old; the patched CDM needs 2.35 or newer."
 
-Run it, then copy the resulting libwidevinecdm.so to:
+    PAGESIZE="$(getconf PAGESIZE)"
+    [ "$PAGESIZE" = "4096" ] \
+      || die "Kernel page size is $PAGESIZE. The CDM only loads with 4K pages."
 
-    ~/.local/share/freetvos/widevine/libwidevinecdm.so
+    command -v unsquashfs >/dev/null || die "unsquashfs missing (squashfs-tools)."
 
-Until then, Plex and YouTube work normally. Netflix, Disney+, Hulu, YouTube TV
-and Apple TV+ will refuse to start.
-MSG
-    exit 6
+    PATCHER=/usr/share/freetvos/widevine/widevine_patch.py
+    [ -r "$PATCHER" ] || die "Patcher missing at $PATCHER"
+
+    TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+    cd "$TMP"
+
+    URL="$LACROS_BASE/$LACROS_NAME-$LACROS_VERSION"
+    echo "Fetching ChromeOS LaCrOS image..."
+    echo "  $URL"
+    curl -fL --progress-bar -o lacros.squashfs "$URL"
+
+    ACTUAL="$(sha256sum lacros.squashfs | cut -d' ' -f1)"
+    if [ -n "$LACROS_SHA256" ]; then
+      [ "$ACTUAL" = "$LACROS_SHA256" ] \
+        || die "Checksum mismatch. Expected $LACROS_SHA256, got $ACTUAL"
+      echo "Checksum verified."
+    else
+      echo "No pinned checksum set. Downloaded image is sha256:$ACTUAL"
+    fi
+
+    echo "Extracting the Widevine module..."
+    unsquashfs -q -n lacros.squashfs 'WidevineCdm/*' >/dev/null
+
+    RAW="squashfs-root/WidevineCdm/_platform_specific/cros_arm64/libwidevinecdm.so"
+    [ -f "$RAW" ] || die "No aarch64 CDM inside the image at $RAW"
+
+    # Two things make the ChromeOS binary refuse to load on ordinary glibc, and
+    # the patcher fixes both: it uses DT_RELR relocations without declaring the
+    # GLIBC_ABI_DT_RELR version dependency that modern glibc demands, and it
+    # calls AArch64 outline-atomic helpers that exist in the ChromeOS toolchain
+    # runtime but not here.
+    echo "Patching the module for standard glibc..."
+    python3 "$PATCHER" "$RAW" libwidevinecdm.so >/dev/null
+
+    SRC="$TMP/libwidevinecdm.so"
+    MANIFEST="$TMP/squashfs-root/WidevineCdm/manifest.json"
+    LICENSE_FILE="$TMP/squashfs-root/WidevineCdm/LICENSE"
     ;;
 
   *)
-    echo "Unsupported architecture: $ARCH" >&2
-    exit 1
+    die "Unsupported architecture: $ARCH"
     ;;
 esac
+
+echo "Installing to $CDM_ROOT..."
+install -d -m 0755 "$CDM_ROOT"
+install -p -m 0644 "$SRC" "$CDM_ROOT/libwidevinecdm.so"
+[ -n "${MANIFEST:-}" ] && [ -f "$MANIFEST" ] \
+  && install -p -m 0644 "$MANIFEST" "$CDM_ROOT/manifest.json"
+[ -n "${LICENSE_FILE:-}" ] && [ -f "$LICENSE_FILE" ] \
+  && install -p -m 0644 "$LICENSE_FILE" "$CDM_ROOT/LICENSE"
+
+install -d -m 0755 "$CDM_ROOT/WidevineCdm/_platform_specific/$PLATFORM_DIR"
+ln -sfn "../../../libwidevinecdm.so" \
+  "$CDM_ROOT/WidevineCdm/_platform_specific/$PLATFORM_DIR/libwidevinecdm.so"
+[ -f "$CDM_ROOT/manifest.json" ] \
+  && ln -sfn "../manifest.json" "$CDM_ROOT/WidevineCdm/manifest.json"
+
+# Chromium checks for the x64 module by a hardcoded path even on ARM, and
+# refuses to go looking for the arm64 one if that check fails. An empty file is
+# enough to satisfy it; it is never loaded.
+if [ "$PLATFORM_DIR" = "linux_arm64" ]; then
+  install -d -m 0755 "$CDM_ROOT/WidevineCdm/_platform_specific/linux_x64"
+  : > "$CDM_ROOT/WidevineCdm/_platform_specific/linux_x64/libwidevinecdm.so"
+fi
+
+echo
+echo "Widevine installed. Netflix, Disney+, Hulu, YouTube TV and Apple TV+"
+echo "should now start. Playback is limited to 720p on any Linux device."

@@ -1,0 +1,58 @@
+<!doctype html><meta charset="utf-8"><title>Widevine check</title>
+<style>
+ :root{--bg:#0B0E14;--fg:#E6EAF2;--dim:#8C97AB;--ok:#3DDC97;--bad:#ff6b6b}
+ body{background:var(--bg);color:var(--fg);margin:0;
+      font:28px/1.5 system-ui,-apple-system,"Noto Sans",sans-serif;
+      /* 5% inset keeps everything inside TV title-safe. */
+      padding:5vh 5vw}
+ h1{font-size:52px;margin:0 0 32px}
+ #r{font-size:34px;margin-bottom:24px}
+ .ok{color:var(--ok)} .bad{color:var(--bad)}
+ pre{font-size:22px;color:var(--dim);white-space:pre-wrap;margin:0}
+ p{color:var(--dim);font-size:22px;max-width:60ch}
+</style>
+<h1>Widevine check</h1>
+<div id="r">Testing&hellip;</div>
+<pre id="d"></pre>
+<p id="note"></p>
+<script>
+const r = document.getElementById('r'),
+      d = document.getElementById('d'),
+      note = document.getElementById('note');
+
+// SW_SECURE_DECODE is the software tier, L3. Asking for HW_SECURE_ALL as well
+// tells us plainly whether this device could ever do HD, and on Linux it never
+// can, so the answer is part of the diagnosis rather than a surprise later.
+const caps = r => [{
+  initDataTypes: ['cenc'],
+  videoCapabilities: [{contentType: 'video/mp4;codecs="avc1.42E01E"', robustness: r}],
+  audioCapabilities: [{contentType: 'audio/mp4;codecs="mp4a.40.2"'}]
+}];
+
+async function probe(robustness) {
+  try {
+    const a = await navigator.requestMediaKeySystemAccess('com.widevine.alpha', caps(robustness));
+    await a.createMediaKeys();
+    return true;
+  } catch (e) { return false; }
+}
+
+(async () => {
+  const l3 = await probe('SW_SECURE_DECODE');
+  if (!l3) {
+    r.innerHTML = '<span class="bad">FAIL &mdash; no Widevine module</span>';
+    d.textContent = 'Run this once, over ssh or from a console:\n  sudo freetvos-widevine-install';
+    return;
+  }
+  const l1 = await probe('HW_SECURE_ALL');
+  r.innerHTML = '<span class="ok">PASS &mdash; Widevine is working</span>';
+  d.textContent = 'key system:  com.widevine.alpha\n'
+                + 'L3 software: yes\n'
+                + 'L1 hardware: ' + (l1 ? 'yes' : 'no');
+  note.textContent = l1
+    ? 'Hardware-backed playback is available.'
+    : 'L3 only, which is normal on Linux. Netflix and Disney+ will play at up '
+    + 'to 720p. HD needs hardware-backed L1, issued only to licensed device '
+    + 'manufacturers.';
+})();
+</script>

@@ -61,12 +61,29 @@ FLAGS=(
 [ "$SPATIAL_NAV" = "yes" ] && FLAGS+=( "--enable-spatial-navigation" )
 
 if [ "$DRM" = "yes" ]; then
-  CDM_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/freetvos/widevine"
-  if [ -f "$CDM_DIR/libwidevinecdm.so" ]; then
-    FLAGS+=( "--widevine-path=$CDM_DIR" )
-  else
-    echo "$APP_ID needs Widevine, which is not installed." >&2
-    echo "Run: freetvos-widevine-install" >&2
+  # There is no --widevine-path flag; Chromium ignores unknown flags silently,
+  # so passing one looks like it works and never does. The CDM is found only by
+  # location: the image symlinks /opt/google/chrome/WidevineCdm, which Chromium
+  # treats as a bundled module, to the directory the installer populates.
+  case "$(uname -m)" in
+    x86_64)         CDM_PLATFORM=linux_x64 ;;
+    aarch64|arm64)  CDM_PLATFORM=linux_arm64 ;;
+    *)              CDM_PLATFORM=unknown ;;
+  esac
+  CDM_SO="/var/lib/freetvos/widevine/WidevineCdm/_platform_specific/$CDM_PLATFORM/libwidevinecdm.so"
+
+  if [ ! -e "$CDM_SO" ]; then
+    MSG="$NAME needs Widevine, which is not installed."
+    # A television has no terminal. Say it on screen, or the tile just looks
+    # dead and the reason is buried in a log nobody will ever open.
+    if command -v kdialog >/dev/null 2>&1; then
+      kdialog --title "$NAME unavailable" \
+        --error "$MSG\n\nRun this once from a terminal or over ssh:\n  sudo freetvos-widevine-install" &
+    elif command -v notify-send >/dev/null 2>&1; then
+      notify-send -u critical "$NAME unavailable" \
+        "$MSG Run: sudo freetvos-widevine-install"
+    fi
+    echo "$MSG Run: sudo freetvos-widevine-install" >&2
     exit 5
   fi
 fi

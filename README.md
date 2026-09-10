@@ -66,15 +66,34 @@ it up as a tile.
 
 ## Two constraints worth knowing before you plan around them
 
-**DRM caps you at 720p, and on ARM it needs manual setup.** Netflix, Disney+,
-Hulu, YouTube TV and Apple TV+ all require Widevine. Linux only ever gets L3,
-the software tier, so HD and 4K are unreachable no matter what this project
-does; L1 is hardware-backed and issued only to licensed device manufacturers.
-Worse on ARM, Google publishes no aarch64 module at all, so it has to be
-extracted from a ChromeOS image and patched. `freetvos-widevine-install`
-handles x86_64 directly from Google's own Chrome package and points at the
-`pivine` project for ARM. Nothing is bundled, because the licence does not
-permit redistribution. Plex and YouTube are unaffected.
+**DRM works, but caps at 720p.** Netflix, Disney+, Hulu, YouTube TV and Apple
+TV+ all require Widevine, and one command installs it:
+
+```bash
+sudo freetvos-widevine-install
+```
+
+On x86_64 that takes the module straight from Google's own Chrome package. On
+ARM there is no such package, because Google publishes no aarch64 Widevine for
+desktop Linux at all, so the installer pulls a ChromeOS LaCrOS image from
+Google's mirror, extracts the module, and patches it. Two things stop the
+ChromeOS binary loading on ordinary glibc, and both are repaired: it uses
+DT_RELR relocations without declaring the `GLIBC_ABI_DT_RELR` dependency that
+modern glibc demands, and it calls AArch64 outline-atomic helpers that exist in
+the ChromeOS toolchain runtime and nowhere else.
+
+Nothing is bundled in the image; the licence does not permit redistribution, so
+the module is fetched on the device by its owner. The download is pinned to a
+known-good build and checksum-verified.
+
+Confirm it afterwards with `freetvos-widevine-check`, which puts the answer on
+the television rather than in a log. Expect it to report L3 and not L1: L1 is
+hardware-backed and issued only to licensed device manufacturers, so 1080p and
+4K are unreachable on any Linux box. Plex and YouTube need no CDM at all.
+
+Prerequisites the installer checks and will refuse without: glibc 2.35 or newer,
+and a 4K-page kernel. The module will not load on the 16K-page kernels used by
+Apple Silicon and some ARM server builds.
 
 This is also why every wrapper runs through Chromium rather than the upstream
 Bigscreen webapp viewer. That viewer is QtWebEngine, and the aarch64 build only
@@ -89,13 +108,11 @@ genuinely supported through UxPlay, including mirroring.
 
 ## Known defects
 
-**Five of the seven tiles do nothing when selected.** Netflix, Disney+, Hulu,
-YouTube TV and Apple TV+ are all gated on Widevine, which is absent. The
-launcher refuses deliberately rather than opening a browser onto a cryptic
-playback error, but it reports that on stderr, and a television has no stderr.
-The tile simply appears dead. The fix is to surface the refusal on screen as a
-notification, with the remedy, rather than in a log nobody reads. Plex and
-YouTube work, because they need no CDM.
+**Desktop applications clutter the tile row.** Chromium, the emoji selector
+and other packaged desktop apps appear on the home screen alongside the
+streaming services, because Bigscreen builds its grid from every installed
+desktop entry. The fix is a set of `NoDisplay=true` overrides in
+`/usr/share/applications` for entries that have no business on a television.
 
 **Every tile icon is blank.** The desktop entries already reference the right
 names, `freetvos-netflix` and so on, so the artwork only has to be drawn and
