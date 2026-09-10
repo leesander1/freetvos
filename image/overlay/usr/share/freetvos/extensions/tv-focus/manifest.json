@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "FreeTVOS focus ring",
+  "version": "1.0",
+  "description": "Makes keyboard focus visible at three metres",
+  "content_scripts": [{
+    "matches": ["<all_urls>"],
+    "css": ["focus.css"],
+    "run_at": "document_start",
+    "all_frames": true
+  }]
+}

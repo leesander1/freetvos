@@ -6,4 +6,4 @@ CATEGORY="AudioVideo;Video;Player;"
 # Plex-distributed movies and live TV do use Widevine and will fail without it.
 DRM="no"
 # Plex ships a genuine TV layout and handles arrow keys itself.
-SPATIAL_NAV="no"
+SPATIAL_NAV="yes"

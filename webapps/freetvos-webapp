@@ -103,14 +103,20 @@ FLAGS=(
 # worth doing when diagnosing a playback problem: an extension that rewrites
 # requests is the first thing to rule out.
 if [ "${EXTENSIONS:-yes}" = "yes" ]; then
-  EXT_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/freetvos/extensions"
   EXT_LIST=""
-  if [ -d "$EXT_DIR" ]; then
+  # Two directories: ones shipped with the image, and ones the owner added.
+  # The shipped set is what makes a mouse-built web page usable from a sofa,
+  # so it loads for every service rather than being something to discover.
+  for EXT_DIR in \
+    "/usr/share/freetvos/extensions" \
+    "${XDG_DATA_HOME:-$HOME/.local/share}/freetvos/extensions"
+  do
+    [ -d "$EXT_DIR" ] || continue
     for d in "$EXT_DIR"/*/; do
       [ -f "$d/manifest.json" ] || continue
       EXT_LIST="${EXT_LIST:+$EXT_LIST,}${d%/}"
     done
-  fi
+  done
   [ -n "$EXT_LIST" ] && FLAGS+=( "--load-extension=$EXT_LIST" )
 fi
 

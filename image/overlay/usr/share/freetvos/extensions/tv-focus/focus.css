@@ -1,0 +1,24 @@
+/*
+ * Spatial navigation moves focus, but Chromium's default focus ring is a thin
+ * one-pixel outline meant for someone sitting at a desk. On a television it is
+ * effectively invisible, so the viewer can see that something changed without
+ * being able to tell what is now selected.
+ *
+ * :focus rather than :focus-visible, because sites that manage their own focus
+ * often move it programmatically, and Chromium then suppresses the
+ * focus-visible ring on the assumption a mouse was used.
+ */
+:focus {
+  outline: 4px solid #3DDC97 !important;
+  outline-offset: 3px !important;
+  /* Sites with heavy stacking contexts can bury the outline behind a sibling;
+     a matching shadow survives that. */
+  box-shadow: 0 0 0 4px #3DDC97, 0 0 18px 6px rgba(61, 220, 151, 0.45) !important;
+  border-radius: 4px;
+}
+
+/* Never let a focused element sit behind the thing next to it. */
+:focus {
+  position: relative;
+  z-index: 2147483647;
+}
