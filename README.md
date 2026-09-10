@@ -151,13 +151,13 @@ that.** Netflix, Disney+ and Hulu pick quality from the Widevine robustness
 level, which is L3 on any Linux device. That decision is made on their servers.
 YouTube, YouTube TV and Plex are not capped this way and do reach 1080p.
 
-**Every tile icon is blank.** The desktop entries already reference the right
-names, `freetvos-netflix` and so on, so the artwork only has to be drawn and
-installed under `hicolor`. Nothing needs rewiring. See `docs/ASSETS.md`.
-
-**The boot is branded Fedora and KDE, not FreeTVOS.** Five separate surfaces
-between power-on and the home screen, catalogued in `docs/BRANDING.md` with the
-current value and controlling file for each.
+**The boot splash has never been seen.** Plymouth is configured and runs
+cleanly, and the theme resolves correctly, but the whole boot is 5.3 seconds
+to graphical with the splash on screen for about two of them, and QEMU's
+display output is inactive for part of that window. Verifying it needs real
+hardware. The same applies to the very earliest frames regardless: this image
+does not regenerate the initramfs, so Plymouth uses the built-in default until
+the root filesystem is mounted.
 
 ## Not done yet
 
