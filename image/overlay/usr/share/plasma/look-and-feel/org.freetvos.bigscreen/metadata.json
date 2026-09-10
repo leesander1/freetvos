@@ -1,0 +1,11 @@
+{
+  "KPlugin": {
+    "Id": "org.freetvos.bigscreen",
+    "Name": "FreeTVOS",
+    "Description": "FreeTVOS look and feel for televisions",
+    "Authors": [{ "Name": "FreeTVOS" }],
+    "License": "MIT",
+    "Version": "0.1.0",
+    "ServiceTypes": ["Plasma/LookAndFeel"]
+  }
+}

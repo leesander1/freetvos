@@ -1,0 +1,11 @@
+[kdeglobals][KDE]
+widgetStyle=Breeze
+
+[plasmarc][Theme]
+name=breeze-dark
+
+[kscreenlockerrc][Greeter]
+Theme=org.freetvos.bigscreen
+
+[Wallpaper]
+Image=org.freetvos.bigscreen

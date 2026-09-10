@@ -1,0 +1,29 @@
+# FreeTVOS boot splash.
+#
+# The mark, centred on the brand ground, and nothing else. No spinner and no
+# progress bar: a still image reads as faster than an animation, because there
+# is no motion for the viewer to measure the wait against, and a television
+# reporting percentages is talking about itself instead of getting out of the
+# way. Apple TV and Roku both show a static mark for the same reason.
+
+Window.SetBackgroundTopColor(0.043, 0.055, 0.078);      # #0B0E14
+Window.SetBackgroundBottomColor(0.043, 0.055, 0.078);
+
+logo.image = Image("logo.png");
+logo.sprite = Sprite(logo.image);
+
+# Size the mark to the panel: a fixed pixel size is lost on 4K and clipped on
+# 720p. A fifth of the height sits comfortably inside title-safe either way.
+target = Window.GetHeight() / 5;
+scale = target / logo.image.GetHeight();
+scaled = logo.image.Scale(logo.image.GetWidth() * scale, target);
+logo.sprite.SetImage(scaled);
+logo.sprite.SetX(Window.GetX() + (Window.GetWidth() - scaled.GetWidth()) / 2);
+logo.sprite.SetY(Window.GetY() + (Window.GetHeight() - scaled.GetHeight()) / 2);
+logo.sprite.SetZ(10);
+
+# Password prompts would only appear for an encrypted disk, which this
+# appliance does not use by default. Left unhandled deliberately rather than
+# half-implemented.
+fun refresh_callback() { }
+Plymouth.SetRefreshFunction(refresh_callback);

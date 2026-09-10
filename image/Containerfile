@@ -128,6 +128,10 @@ COPY cast/dial/ /usr/share/freetvos/dial/
 # rather than fetched at install time, so the device is not downloading and
 # running a script from the internet as root. MIT licensed; see the LICENSE
 # file alongside it.
+# Icon theme. Scalable SVG rather than rasters: the theme handles it natively,
+# it stays sharp on a 4K panel, and it needs no rasteriser in the build.
+COPY brand/icons/ /usr/share/icons/hicolor/scalable/apps/
+
 COPY tools/vendor/widevine_patch.py /usr/share/freetvos/widevine/widevine_patch.py
 COPY tools/vendor/LICENSE.pivine /usr/share/freetvos/widevine/LICENSE.pivine
 
@@ -136,7 +140,19 @@ RUN chmod 0755 /usr/bin/freetvos-webapp /usr/bin/freetvos-firstboot \
               /usr/bin/freetvos-widevine-check \
               /usr/bin/freetvos-apps /usr/bin/freetvos-pin \
  && python3 /usr/share/freetvos/generate-desktop-entries.py \
- && python3 /usr/share/freetvos/curate-apps.py
+ && python3 /usr/share/freetvos/curate-apps.py \
+ && python3 /usr/share/freetvos/brand-os-release.py \
+ && python3 /usr/share/freetvos/render-boot-logo.py \
+      /usr/share/plymouth/themes/freetvos/logo.png \
+ && python3 /usr/share/freetvos/render-wallpaper.py \
+      /usr/share/wallpapers/FreeTVOS/contents/images/3840x2160.png 3840 2160 \
+ && python3 /usr/share/freetvos/render-wallpaper.py \
+      /usr/share/wallpapers/FreeTVOS/contents/images/1920x1080.png 1920 1080 \
+ && ln -sfn FreeTVOS /usr/share/wallpapers/Default \
+ && python3 /usr/share/freetvos/tune-shell-defaults.py \
+ && cp /usr/share/plymouth/themes/freetvos/logo.png \
+      /usr/share/plasma/look-and-feel/org.freetvos.bigscreen/contents/splash/images/logo.png \
+ && gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # Services. sddm auto-logs into the Bigscreen session; a TV has no login screen.

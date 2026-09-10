@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=FreeTVOS
+Description=FreeTVOS boot splash
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/freetvos
+ScriptFile=/usr/share/plymouth/themes/freetvos/freetvos.script

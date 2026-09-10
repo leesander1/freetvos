@@ -1,0 +1,10 @@
+{
+  "KPlugin": {
+    "Id": "FreeTVOS",
+    "Name": "FreeTVOS",
+    "Description": "Dark ground, so the focus ring stays legible",
+    "Authors": [{ "Name": "FreeTVOS" }],
+    "License": "MIT"
+  },
+  "X-KDE-PluginInfo-Name": "FreeTVOS"
+}
