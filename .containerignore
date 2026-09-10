@@ -1,0 +1,9 @@
+# The build context must not carry disk images. Without this, podman tars up a
+# multi-gigabyte qcow2 on every build, and if a VM is running from it the file
+# changes mid-stream and the build fails outright.
+output/
+*.qcow2
+*.raw
+*.iso
+.git/
+__pycache__/

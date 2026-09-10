@@ -1,0 +1,22 @@
+[Unit]
+Description=FreeTVOS AirPlay receiver
+Documentation=https://github.com/FDH2/UxPlay
+After=network-online.target avahi-daemon.service sound.target
+Wants=network-online.target
+Requires=avahi-daemon.service
+
+[Service]
+# UxPlay must share the session's Wayland display to put mirrored video
+# on screen, and its GStreamer pipeline needs the same VAAPI devices the
+# shell uses. -nh keeps the advertised name fixed rather than appending
+# the hostname, so the TV shows up predictably in the iOS picker.
+Type=simple
+User=tv
+ExecStart=/usr/bin/uxplay -n "FreeTVOS" -nh -vs glimagesink -as autoaudiosink
+Restart=on-failure
+RestartSec=5
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=WAYLAND_DISPLAY=wayland-0
+
+[Install]
+WantedBy=graphical.target

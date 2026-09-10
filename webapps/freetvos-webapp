@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# freetvos-webapp <app-id>
+#
+# One launcher for every streaming service. Each service is a declarative file
+# in /usr/share/freetvos/webapps, so adding one is a text file and no new code.
+#
+# Chromium rather than the upstream Bigscreen webapp viewer, for a hard reason:
+# the viewer is QtWebEngine, and the aarch64 QtWebEngine only knows the
+# _platform_specific/linux_x64 CDM path. It cannot load an ARM Widevine module
+# at all. Chromium knows linux_arm64. On ARM, Chromium is the only host that
+# can play a DRM service.
+set -euo pipefail
+
+APP_ID="${1:-}"
+APP_DIR="/usr/share/freetvos/webapps"
+[ -n "$APP_ID" ] || { echo "usage: freetvos-webapp <app-id>" >&2; exit 2; }
+APP_FILE="$APP_DIR/$APP_ID.app"
+[ -r "$APP_FILE" ] || { echo "no such app: $APP_ID" >&2; exit 3; }
+
+NAME=""; URL=""; DRM="no"; USER_AGENT=""; SPATIAL_NAV="no"
+# shellcheck disable=SC1090
+. "$APP_FILE"
+[ -n "$URL" ] || { echo "$APP_ID: no URL defined" >&2; exit 4; }
+
+# Per-app profile. Isolating them keeps one service's cookies, and one
+# service's corrupted cache, away from every other service.
+PROFILE="${XDG_DATA_HOME:-$HOME/.local/share}/freetvos/webapps/$APP_ID"
+mkdir -p "$PROFILE"
+
+FLAGS=(
+  "--app=$URL"
+  "--user-data-dir=$PROFILE"
+  "--class=freetvos-$APP_ID"
+
+  # Wayland natively; going through XWayland costs a copy per frame and
+  # breaks fractional scaling on 4K panels.
+  "--ozone-platform=wayland"
+  "--enable-features=UseOzonePlatform,WaylandWindowDecorations,VaapiVideoDecoder,AcceleratedVideoDecodeLinuxGL"
+
+  "--start-fullscreen"
+  "--autoplay-policy=no-user-gesture-required"
+
+  # No Cast sender: this device is a receiver, and the menu entry only
+  # confuses a remote-driven interface.
+  "--disable-features=Translate,MediaRouter,GlobalMediaControls"
+
+  "--no-first-run"
+  "--no-default-browser-check"
+  "--disable-session-crashed-bubble"
+  "--hide-crash-restore-bubble"
+  "--check-for-update-interval=31536000"
+)
+
+# Several services serve a degraded player, or refuse entirely, when they see
+# Linux. The override is per-app because the ones that do not check are better
+# left honest.
+[ -n "$USER_AGENT" ] && FLAGS+=( "--user-agent=$USER_AGENT" )
+
+# D-pad navigation for sites without their own arrow-key handling. Left off by
+# default: the real TV interfaces handle arrows themselves and fight it.
+[ "$SPATIAL_NAV" = "yes" ] && FLAGS+=( "--enable-spatial-navigation" )
+
+if [ "$DRM" = "yes" ]; then
+  CDM_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/freetvos/widevine"
+  if [ -f "$CDM_DIR/libwidevinecdm.so" ]; then
+    FLAGS+=( "--widevine-path=$CDM_DIR" )
+  else
+    echo "$APP_ID needs Widevine, which is not installed." >&2
+    echo "Run: freetvos-widevine-install" >&2
+    exit 5
+  fi
+fi
+
+exec /usr/bin/chromium-browser "${FLAGS[@]}"

@@ -1,0 +1,13 @@
+[Unit]
+Description=Ensure the appliance user can reach GPU, audio and input devices
+After=systemd-sysusers.service
+Before=sddm.service freetvos-airplay.service
+Wants=systemd-sysusers.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/freetvos-ensure-groups tv
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

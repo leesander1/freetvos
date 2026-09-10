@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<service>
+  <short>FreeTVOS Cast</short>
+  <description>AirPlay receiver, DIAL receiver and mDNS discovery.</description>
+  <port protocol="udp" port="1900"/>
+  <port protocol="tcp" port="56789"/>
+  <port protocol="tcp" port="7000"/>
+  <port protocol="tcp" port="7100"/>
+  <port protocol="udp" port="6000"/>
+  <port protocol="udp" port="6001"/>
+  <port protocol="udp" port="7011"/>
+  <port protocol="udp" port="5353"/>
+</service>

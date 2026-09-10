@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Provision the Widevine CDM into the user's data directory.
+#
+# Deliberately NOT baked into the image. The CDM is proprietary and its licence
+# does not permit redistribution, so shipping it inside FreeTVOS would make the
+# image undistributable. It is fetched on the device, by the device's owner,
+# from the vendor, which is the same posture Raspberry Pi OS and LibreELEC take.
+#
+# Expect L3 either way. L1 is hardware-backed and issued only to licensed
+# device makers, so 1080p and 4K on Netflix and Disney+ are out of reach here
+# no matter what this script does. 720p is the ceiling.
+set -euo pipefail
+
+DEST="${XDG_DATA_HOME:-$HOME/.local/share}/freetvos/widevine"
+ARCH="$(uname -m)"
+mkdir -p "$DEST"
+
+case "$ARCH" in
+  x86_64)
+    # Google Chrome for Linux ships the CDM, and this is the vendor's own
+    # download. No extraction from a third-party image is needed.
+    TMP="$(mktemp -d)"
+    trap 'rm -rf "$TMP"' EXIT
+    echo "Fetching Google Chrome to obtain the Widevine module..."
+    curl -fsSL -o "$TMP/chrome.deb" \
+      "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb"
+    ( cd "$TMP" && ar x chrome.deb && tar -xf data.tar.* )
+    SRC="$(find "$TMP" -name libwidevinecdm.so -print -quit)"
+    [ -n "$SRC" ] || { echo "No CDM found inside the Chrome package." >&2; exit 1; }
+    install -m 0644 "$SRC" "$DEST/libwidevinecdm.so"
+    echo "Installed Widevine to $DEST"
+    ;;
+
+  aarch64|arm64)
+    # Google publishes no general ARM64 CDM. The only working source is the
+    # module inside a ChromeOS LaCrOS image, which then needs patching before a
+    # normal glibc Chromium will load it. That extraction is fiddly and its
+    # download URLs move, so this defers to the project that tracks them rather
+    # than hardcoding a URL that will rot.
+    cat >&2 <<'MSG'
+No official ARM64 Widevine module exists.
+
+The working method extracts the aarch64 CDM from a ChromeOS LaCrOS image and
+patches it to load against standard glibc. The pivine project tracks the
+current image locations and patch offsets:
+
+    https://github.com/xesco/pivine
+
+Run it, then copy the resulting libwidevinecdm.so to:
+
+    ~/.local/share/freetvos/widevine/libwidevinecdm.so
+
+Until then, Plex and YouTube work normally. Netflix, Disney+, Hulu, YouTube TV
+and Apple TV+ will refuse to start.
+MSG
+    exit 6
+    ;;
+
+  *)
+    echo "Unsupported architecture: $ARCH" >&2
+    exit 1
+    ;;
+esac

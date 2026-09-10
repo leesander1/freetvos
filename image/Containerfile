@@ -1,0 +1,148 @@
+# FreeTVOS — a Plasma Bigscreen appliance built as a bootable container.
+#
+# The whole OS is this file plus the overlay tree. `bootc-image-builder` turns
+# the result into a qcow2 for QEMU, a raw image for SD cards, or an installer
+# ISO, all from this one definition. Updates are atomic with rollback, which is
+# what a set-top box wants and what a package manager cannot give it.
+ARG BASE_IMAGE=quay.io/fedora/fedora-bootc:44
+FROM ${BASE_IMAGE}
+
+ARG BRAND_ID=freetvos
+ARG BRAND_NAME=FreeTVOS
+ARG BRAND_VERSION=0.1.0
+
+LABEL org.opencontainers.image.title="${BRAND_NAME}" \
+      org.opencontainers.image.version="${BRAND_VERSION}" \
+      org.opencontainers.image.description="Plasma Bigscreen TV appliance"
+
+# ---------------------------------------------------------------------------
+# Shell and session.
+#
+# plasma-bigscreen-wayland pulls the Bigscreen session and kwin. plasma-nm and
+# bluedevil are not optional on a TV: the first-run experience is joining wifi
+# and pairing a remote, and neither is reachable without them.
+# ---------------------------------------------------------------------------
+# Weak dependencies stay ON for this block, unlike everywhere else in the file.
+# Turning them off strips the integration pieces Plasma treats as optional but
+# Bigscreen does not: without milou the home screen applet fails to load
+# outright, and the TV boots to an empty shell. The extra few hundred megabytes
+# buy a working interface. kde-connect is in the same category: the home
+# screen's header imports its QML unconditionally, so without it the entire
+# HomeScreen type fails to instantiate and the TV shows a QML backtrace. It
+# also happens to turn a phone into a remote, which this device wants.
+RUN dnf install -y \
+      plasma-bigscreen \
+      plasma-bigscreen-wayland \
+      plasma-workspace \
+      plasma-nm \
+      plasma-pa \
+      bluedevil \
+      sddm-breeze \
+      sddm \
+      sddm-wayland-generic \
+      xdg-desktop-portal-kde \
+      qqc2-desktop-style \
+      kf6-kirigami-addons \
+      plasma-milou \
+      upower \
+      kde-connect \
+      mesa-libEGL \
+      mesa-libGL \
+      mesa-vulkan-drivers \
+ && dnf clean all
+
+# plasma-welcome arrives as a weak dependency and opens a desktop onboarding
+# wizard on top of the TV interface at first login. There is no pointer and no
+# keyboard on a television, so it is not dismissible in the intended way.
+RUN dnf remove -y plasma-welcome || true
+
+# ---------------------------------------------------------------------------
+# Media stack.
+#
+# vaapi and the full gstreamer set matter twice over: once for local playback,
+# once because UxPlay decodes the AirPlay H.264 stream through gstreamer.
+# ---------------------------------------------------------------------------
+# RPM Fusion. Not optional for a media appliance: Fedora cannot ship the
+# patent-encumbered ffmpeg that gstreamer1-libav wraps, and without it UxPlay
+# refuses to start at all because it has no H.264 decoder for the AirPlay
+# stream. The same repo carries the VAAPI drivers real hardware decode needs.
+RUN dnf install -y \
+      "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm" \
+ && dnf clean all
+
+RUN dnf install -y --setopt=install_weak_deps=False \
+      gstreamer1-libav \
+      pipewire pipewire-pulseaudio pipewire-alsa wireplumber \
+      gstreamer1-plugins-base \
+      gstreamer1-plugins-good \
+      gstreamer1-plugins-bad-free \
+      gstreamer1-vaapi \
+      mesa-dri-drivers \
+      mesa-va-drivers \
+      libva libva-utils \
+      mpv \
+ && dnf clean all
+
+# ---------------------------------------------------------------------------
+# Casting receivers.
+#
+# UxPlay gives real AirPlay mirroring and audio. There is no legitimate open
+# Chromecast receiver, so phone-to-TV for YouTube arrives over DIAL instead;
+# see cast/dial. avahi carries the mDNS advertisement both depend on.
+# ---------------------------------------------------------------------------
+RUN dnf install -y --setopt=install_weak_deps=False \
+      uxplay \
+      avahi \
+      nss-mdns \
+ && dnf clean all
+
+# ---------------------------------------------------------------------------
+# Web app runtime and system plumbing.
+# ---------------------------------------------------------------------------
+RUN dnf install -y --setopt=install_weak_deps=False \
+      chromium \
+      NetworkManager-wifi \
+      plymouth plymouth-system-theme \
+      libcec \
+      python3 \
+      google-noto-sans-fonts \
+      google-noto-sans-mono-fonts \
+      openssh-server \
+      glibc-langpack-en \
+ && dnf clean all
+
+# ---------------------------------------------------------------------------
+# Overlay: units, launchers, branding, app definitions.
+# ---------------------------------------------------------------------------
+COPY image/overlay/ /
+
+# Web app definitions land in /usr/share/<brand>/webapps and are read at launch
+# by the shared wrapper, so adding a service is one file and no new code.
+COPY webapps/apps.d/ /usr/share/freetvos/webapps/
+COPY webapps/freetvos-webapp /usr/bin/freetvos-webapp
+COPY cast/dial/ /usr/share/freetvos/dial/
+
+RUN chmod 0755 /usr/bin/freetvos-webapp /usr/bin/freetvos-firstboot \
+              /usr/bin/freetvos-widevine-install /usr/bin/freetvos-ensure-groups \
+ && python3 /usr/share/freetvos/generate-desktop-entries.py
+
+# ---------------------------------------------------------------------------
+# Services. sddm auto-logs into the Bigscreen session; a TV has no login screen.
+# ---------------------------------------------------------------------------
+# sshd is how you inspect a running TV. It has no keyboard and no terminal,
+# so without it a failed service is invisible.
+RUN systemctl enable sddm avahi-daemon bluetooth NetworkManager sshd \
+ && systemctl enable freetvos-user-groups.service \
+ && systemctl enable freetvos-airplay.service freetvos-firstboot.service freetvos-dial.service \
+ && systemctl set-default graphical.target
+
+# bootc requires /var to stay empty at build time; anything written here would
+# become a one-time factory default rather than real state.
+# /run/secrets and the resolver stub are podman's own bind mounts and cannot
+# be removed here, so clear only what the package installs actually left behind.
+RUN rm -rf /var/cache/* /var/log/* /var/tmp/* /tmp/* \
+      /run/dnf /run/sddm \
+      /var/lib/dnf /var/lib/authselect/checksum \
+      /var/lib/AccountsService /var/lib/geoclue \
+      /var/lib/plymouth /var/spool/plymouth \
+ && bootc container lint

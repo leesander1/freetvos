@@ -1,0 +1,7 @@
+NAME="YouTube TV"
+URL="https://tv.youtube.com/"
+ICON="freetvos-youtubetv"
+CATEGORY="AudioVideo;Video;Player;TV;"
+DRM="yes"
+USER_AGENT=""
+SPATIAL_NAV="no"

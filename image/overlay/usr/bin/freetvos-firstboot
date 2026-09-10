@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Seed the appliance user's Plasma configuration on first boot only.
+#
+# These are settings a desktop gets wrong for a television: a TV must never
+# blank or lock while someone is watching, and it should not ask for a password
+# on a device driven entirely by a remote with no keyboard.
+set -euo pipefail
+
+STAMP="$HOME/.local/state/freetvos/firstboot-done"
+[ -e "$STAMP" ] && exit 0
+mkdir -p "$(dirname "$STAMP")" "$HOME/.config"
+
+# No lock screen, no idle blanking. A two-hour film has long stretches with no
+# input, and a TV that locks mid-scene is a broken TV.
+cat > "$HOME/.config/kscreenlockerrc" <<'EOF'
+[Daemon]
+Autolock=false
+LockOnResume=false
+EOF
+
+# Screen blanking, deliberately long rather than off.
+#
+# idleTime=0 does NOT mean "never" to PowerDevil, it means "immediately", and
+# setting it that way blanks the panel seconds after boot. Thirty minutes is
+# the useful reading of the intent, and on an OLED panel some blanking is
+# wanted anyway. The dim and suspend groups are omitted entirely: a television
+# must never dim mid-film and must never suspend itself.
+cat > "$HOME/.config/powermanagementprofilesrc" <<'EOF'
+[AC][DPMSControl]
+idleTime=1800
+lockBeforeTurnOff=0
+EOF
+
+mkdir -p "$HOME/.local/share/freetvos/webapps"
+touch "$STAMP"

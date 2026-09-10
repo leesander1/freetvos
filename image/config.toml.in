@@ -1,0 +1,27 @@
+# bootc-image-builder configuration, templated.
+#
+# tools/make-disk.sh fills @SSH_KEY@ from the building user's own public key,
+# so no personal key is committed and every developer gets an image they can
+# actually reach.
+#
+# Note the division of labour with usr/lib/sysusers.d/freetvos.conf: that file
+# owns the account's identity and group membership, because under bootc
+# identity belongs to the image. This file only adds credentials for reaching a
+# console. Declaring the groups in both places makes osbuild's useradd run
+# against the ostree tree and fail to resolve them.
+
+[[customizations.user]]
+name = "tv"
+password = "tv"
+key = "@SSH_KEY@"
+
+[customizations.kernel]
+# quiet and splash hand the boot over to Plymouth. A television should not
+# show a wall of kernel messages on the way up.
+append = "quiet splash rd.systemd.show_status=false plymouth.ignore-serial-consoles"
+
+# Root by key only, never by password. This exists so a developer can reach a
+# broken image; a shipped build should drop this block entirely.
+[[customizations.user]]
+name = "root"
+key = "@SSH_KEY@"

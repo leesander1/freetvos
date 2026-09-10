@@ -1,0 +1,19 @@
+[Unit]
+Description=FreeTVOS DIAL receiver (phone-initiated app launch)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tv
+ExecStart=/usr/bin/python3 /usr/share/freetvos/dial/freetvos-dial.py
+Restart=on-failure
+RestartSec=5
+# Holds the device UUID, which phones cache. Regenerating it on every boot
+# would make the TV appear as a brand new device each time.
+StateDirectory=freetvos
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=WAYLAND_DISPLAY=wayland-0
+
+[Install]
+WantedBy=graphical.target

@@ -1,0 +1,9 @@
+# The base image declares no default root filesystem, so image builders refuse
+# to produce a disk without being told one.
+#
+# ext4 rather than Fedora's usual xfs. This image is meant to land on SD cards
+# and eMMC as well as VMs, where ext4 has far better tooling and recovery, and
+# unlike xfs it can be shrunk, which matters when an image cut for a 32GB card
+# has to fit a 16GB one.
+[install.filesystem.root]
+type = "ext4"

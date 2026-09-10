@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Grant the appliance user access to GPU, audio and input devices.
+#
+# This cannot be done with usermod. On an ostree system the system groups live
+# in /usr/lib/group, not /etc/group, and shadow-utils only ever edits the
+# latter, so usermod cannot find the group and exits successfully having done
+# nothing. That silent no-op is why the shell would otherwise come up with no
+# access to /dev/dri or /dev/snd.
+#
+# nsswitch.conf here reads "group: files [SUCCESS=merge] altfiles", and that
+# merge is the supported way through: an entry written to /etc/group with the
+# same name and GID has its member list merged with the one in /usr/lib/group.
+set -euo pipefail
+
+USER_NAME="${1:-tv}"
+# wheel is included so a developer can reach root on a box with no keyboard.
+# On a shipped appliance consider dropping it: the session auto-logs in, so
+# membership here means physical access is administrative access.
+GROUPS_WANTED=(video render audio input wheel)
+
+for g in "${GROUPS_WANTED[@]}"; do
+  line="$(getent group "$g" || true)"
+  if [ -z "$line" ]; then
+    echo "group $g does not exist, skipping" >&2
+    continue
+  fi
+
+  IFS=':' read -r name _ gid members <<<"$line"
+
+  # Already a member, via either file.
+  if [[ ",$members," == *",$USER_NAME,"* ]]; then
+    continue
+  fi
+
+  if grep -q "^$name:" /etc/group; then
+    # A local entry exists; append to its member list in place.
+    sed -i "s|^\($name:[^:]*:[^:]*:\)\(.*\)$|\1\2,$USER_NAME|; s|,,|,|; s|:,|:|" /etc/group
+  else
+    # No local entry: create one carrying the same GID so NSS merges the two.
+    printf '%s:x:%s:%s\n' "$name" "$gid" "$USER_NAME" >> /etc/group
+  fi
+  echo "added $USER_NAME to $name (gid $gid)"
+done
