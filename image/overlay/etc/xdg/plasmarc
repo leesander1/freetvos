@@ -1,0 +1,5 @@
+# The Plasma theme, which is what Kirigami and QtQuick Controls applications
+# follow. Distinct from the colour scheme in kdeglobals, which governs classic
+# widget applications. Both have to be dark or half the interface is white.
+[Theme]
+name=breeze-dark

@@ -70,9 +70,88 @@ def pin_wallpaper() -> bool:
     return True
 
 
+COLOR_SCHEME = Path("/usr/share/color-schemes/BreezeDark.colors")
+SYSTEM_KDEGLOBALS = Path("/etc/xdg/kdeglobals")
+
+
+def darken_shell() -> bool:
+    """Actually make Qt applications dark.
+
+    Setting ColorScheme=BreezeDark is not enough, and this cost some time to
+    work out. That key is only a label recording which scheme was chosen; the
+    colours applications actually read live in [Colors:Window], [Colors:View]
+    and friends, which the Colours settings page copies into kdeglobals when a
+    scheme is picked. Upstream Bigscreen already sets the label, which is why
+    the shell looks dark while every dialog and the settings window opened in
+    light Breeze.
+
+    So the scheme's colour groups are merged into the system kdeglobals here,
+    which is what a user picking the scheme by hand would have produced.
+    """
+    if not COLOR_SCHEME.exists():
+        print("  skip dark scheme: BreezeDark.colors missing")
+        return False
+    if not SYSTEM_KDEGLOBALS.exists():
+        print("  skip dark scheme: /etc/xdg/kdeglobals missing")
+        return False
+
+    # Take only the [Colors:*] groups plus [WM]; the rest of a .colors file is
+    # metadata that does not belong in kdeglobals.
+    wanted, current = [], None
+    for line in COLOR_SCHEME.read_text().splitlines():
+        if line.startswith("["):
+            current = line.strip()
+        if current and (current.startswith("[Colors:") or current == "[WM]"):
+            wanted.append(line)
+
+    existing = SYSTEM_KDEGLOBALS.read_text()
+    if "[Colors:Window]" in existing:
+        print("  dark scheme already merged")
+        return True
+
+    SYSTEM_KDEGLOBALS.write_text(
+        existing.rstrip("\n") + "\n\n" + "\n".join(wanted) + "\n")
+    print(f"  merged {len(wanted)} lines of BreezeDark into /etc/xdg/kdeglobals")
+    return True
+
+
+BIGSCREEN_DEFAULTS = Path(
+    "/usr/share/plasma/look-and-feel/org.kde.plasma.bigscreen/contents/defaults"
+)
+
+
+def darken_plasma_theme() -> bool:
+    """Switch the Plasma theme to the dark one.
+
+    Separate from the colour scheme above, and this is the piece that actually
+    darkens the settings window. Kirigami and QtQuick Controls applications
+    styled with the Plasma style read [Theme] name from plasmarc; the
+    ColorScheme in kdeglobals governs classic widget applications. Bigscreen
+    ships name=default, which is light, so the settings window stayed white
+    however the colour scheme was set.
+    """
+    if not BIGSCREEN_DEFAULTS.exists():
+        print("  skip plasma theme: look-and-feel defaults missing")
+        return False
+    text = BIGSCREEN_DEFAULTS.read_text()
+    if "name=breeze-dark" in text:
+        print("  plasma theme already dark")
+        return True
+    if "[plasmarc][Theme]\nname=default" not in text:
+        print("  skip plasma theme: expected block not found")
+        return False
+    BIGSCREEN_DEFAULTS.write_text(
+        text.replace("[plasmarc][Theme]\nname=default",
+                     "[plasmarc][Theme]\nname=breeze-dark"))
+    print("  plasma theme set to breeze-dark")
+    return True
+
+
 def main() -> int:
     set_bool_default(HOMESCREEN, "coloredTiles", "false")
     pin_wallpaper()
+    darken_shell()
+    darken_plasma_theme()
     return 0
 
 

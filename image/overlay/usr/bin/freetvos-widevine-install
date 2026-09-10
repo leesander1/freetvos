@@ -86,10 +86,20 @@ case "$ARCH" in
     TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
     cd "$TMP"
 
-    URL="$LACROS_BASE/$LACROS_NAME-$LACROS_VERSION"
-    echo "Fetching ChromeOS LaCrOS image..."
-    echo "  $URL"
-    curl -fL --progress-bar -o lacros.squashfs "$URL"
+    # LACROS_FILE lets a caller supply an already-downloaded image. The
+    # development loop rebuilds the disk often, and every rebuild recreates
+    # /var and takes the module with it, so re-downloading a hundred megabytes
+    # each time is pure waste. It also makes the install work offline.
+    if [ -n "${LACROS_FILE:-}" ]; then
+      [ -r "$LACROS_FILE" ] || die "LACROS_FILE is set but $LACROS_FILE cannot be read"
+      echo "Using local image: $LACROS_FILE"
+      cp "$LACROS_FILE" lacros.squashfs
+    else
+      URL="$LACROS_BASE/$LACROS_NAME-$LACROS_VERSION"
+      echo "Fetching ChromeOS LaCrOS image..."
+      echo "  $URL"
+      curl -fL --progress-bar -o lacros.squashfs "$URL"
+    fi
 
     ACTUAL="$(sha256sum lacros.squashfs | cut -d' ' -f1)"
     if [ -n "$LACROS_SHA256" ]; then

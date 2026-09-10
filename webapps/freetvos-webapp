@@ -76,6 +76,17 @@ FLAGS=(
   # confuses a remote-driven interface.
   "--disable-features=Translate,MediaRouter,GlobalMediaControls"
 
+  # Do not ask KDE's wallet for a key to encrypt cookies with. On a desktop
+  # that prompt is a minor annoyance; here it is a dead end, because the device
+  # auto-logs in and has no keyboard, so nobody can answer it and the service
+  # never finishes loading.
+  #
+  # The trade is real and worth stating: cookies and saved passwords are then
+  # protected by file permissions rather than by a wallet key. On a
+  # single-account appliance whose disk is not encrypted anyway, anyone who can
+  # read those files can already read the wallet database too.
+  "--password-store=basic"
+
   "--no-first-run"
   "--no-default-browser-check"
   "--disable-session-crashed-bubble"

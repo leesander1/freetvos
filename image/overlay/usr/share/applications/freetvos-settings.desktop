@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Settings
+Comment=FreeTVOS settings
+Exec=/usr/bin/freetvos-settings
+Icon=freetvos-settings
+Categories=Settings;
+Terminal=false
+StartupNotify=true
+X-KDE-FormFactor=tv

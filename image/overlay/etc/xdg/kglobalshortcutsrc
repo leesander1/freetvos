@@ -1,0 +1,18 @@
+# Getting out of an application with a remote.
+#
+# There was no way back. Every service opens fullscreen with no window
+# decoration, and the settings app opened over the shell with nothing on screen
+# offering an exit, so the only way out was a keyboard. On a television that is
+# a dead end.
+#
+# Closing the focused window is the right action rather than "minimise" or
+# "show desktop": the Bigscreen home screen is the desktop, so closing whatever
+# is on top reveals it, which is exactly what Back and Home should do.
+#
+# XF86Back and XF86HomePage are what TV remotes and HDMI-CEC send. Meta+
+# combinations are kept alongside so a keyboard still works during development.
+#
+# Untested against a real remote: this VM has no CEC and no infrared receiver,
+# so the bindings are correct on paper and unverified in practice.
+[kwin]
+Window Close=XF86Back\tXF86HomePage\tMeta+Backspace,Meta+Ctrl+Escape,Close Window

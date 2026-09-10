@@ -1,0 +1,12 @@
+# No wallet on a television.
+#
+# KWallet exists to guard secrets behind a password the user types. This device
+# logs in automatically and has no keyboard, so the prompt cannot be answered
+# and any application that waits on one simply hangs. Chromium asked for it on
+# first launch of a service and got stuck there.
+#
+# Disabling it is honest rather than merely convenient: a wallet whose password
+# is blank, or auto-unlocked at login, protects nothing anyway.
+[Wallet]
+Enabled=false
+First Use=false

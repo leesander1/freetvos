@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Open the television settings, not the desktop ones.
+#
+# There are three settings applications on this system and only one belongs on
+# a TV. systemsettings and plasma-settings both draw a sidebar, a search field
+# and dialogs that assume a pointer, with no obvious way back out.
+# plasma-bigscreen-settings is key-navigable with large type, and is what the
+# shell's own settings button opens.
+#
+# The wrapper exists because that application quietly exits with status 0 when
+# PLASMA_PLATFORM is unset, which is what happens if it is started from ssh, a
+# systemd unit, or anything that does not inherit the session environment.
+# Setting it here means the tile, the shell button and the command line all
+# land in the same place.
+set -euo pipefail
+
+export PLASMA_PLATFORM="${PLASMA_PLATFORM:-mediacenter}"
+export QT_FILE_SELECTORS="${QT_FILE_SELECTORS:-mediacenter}"
+
+exec /usr/bin/plasma-bigscreen-settings "$@"

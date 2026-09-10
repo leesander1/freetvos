@@ -39,6 +39,17 @@ and macOS AirPlay picker. This one genuinely mirrors the screen and streams
 audio, so it is the right choice for showing photos or anything with no TV app
 of its own.
 
+## Getting back out of an application
+
+Every service opens fullscreen without decoration, so there is no visible exit.
+**Back** and **Home** on a remote both close whatever is on top, which reveals
+the home screen underneath. On a keyboard that is Meta+Backspace.
+
+These are bound in `/etc/xdg/kglobalshortcutsrc` to the `XF86Back` and
+`XF86HomePage` keysyms that remotes and HDMI-CEC emit. They have not been
+tested against a real remote, because the development VM has neither CEC nor an
+infrared receiver.
+
 ## What is missing
 
 HDMI-CEC, which is what makes an ordinary TV remote drive the box over the

@@ -1,0 +1,30 @@
+# System-wide Qt and KDE defaults for a television.
+#
+# Two problems this fixes, both of which showed up first in the settings app
+# but affect every KDE dialog on the device.
+#
+# Dark, because the shell is dark and a light settings window is a white
+# rectangle thrown at someone sitting in a dim room. Breeze Dark rather than a
+# hand-rolled scheme so every application that respects the colour scheme,
+# including ones not yet installed, comes out consistent.
+#
+# Larger type, because the defaults assume a screen at arm's length. At three
+# metres, 10pt is unreadable. 14pt is the smallest that holds up on a 1080p
+# panel across a room, and it is applied here rather than through a global
+# scale factor so that layouts reflow instead of everything being magnified,
+# including things that were already big enough.
+
+[General]
+ColorScheme=BreezeDark
+font=Noto Sans,14,-1,5,400,0,0,0,0,0,0,0,0,0,0,1
+menuFont=Noto Sans,14,-1,5,400,0,0,0,0,0,0,0,0,0,0,1
+smallestReadableFont=Noto Sans,12,-1,5,400,0,0,0,0,0,0,0,0,0,0,1
+toolBarFont=Noto Sans,14,-1,5,400,0,0,0,0,0,0,0,0,0,0,1
+fixed=Noto Sans Mono,13,-1,5,400,0,0,0,0,0,0,0,0,0,0,1
+
+[WM]
+activeFont=Noto Sans,14,-1,5,600,0,0,0,0,0,0,0,0,0,0,1
+
+[KDE]
+widgetStyle=Breeze
+SingleClick=true

@@ -44,6 +44,7 @@ RUN dnf install -y \
       qqc2-desktop-style \
       kf6-kirigami-addons \
       plasma-milou \
+      plasma-settings \
       upower \
       kde-connect \
       kdialog \
