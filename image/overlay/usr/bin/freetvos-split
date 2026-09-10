@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# Show two or four services at once, with sound following the focused pane.
+#
+#   freetvos-split 1     one service, fullscreen
+#   freetvos-split 2     two side by side
+#   freetvos-split 4     four in a grid
+#   freetvos-split next  move focus, and the audio, to the next pane
+#
+# Two halves. The tiling has to happen inside the compositor, because on
+# Wayland nothing else may place a window, so it goes through a KWin script.
+# The audio is done out here with wpctl, which a KWin script cannot reach.
+#
+# The two halves never talk to each other. They agree on pane order by both
+# sorting on window class, which the launcher sets to freetvos-<service>.
+set -euo pipefail
+
+STATE_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/freetvos"
+mkdir -p "$STATE_DIR"
+FOCUS_FILE="$STATE_DIR/split-focus"
+TEMPLATE=/usr/share/freetvos/kwin/split.js.in
+
+die() { echo "$*" >&2; exit 1; }
+
+# --------------------------------------------------------------- panes ------
+
+# Which services are on screen, in the same order the KWin script will use.
+# Read from the command line rather than from the compositor, so the two sides
+# do not need a channel between them.
+running_apps() {
+  for pid in $(pgrep -f -- "--class=freetvos-" 2>/dev/null || true); do
+    cls="$(tr '\0' '\n' < "/proc/$pid/cmdline" 2>/dev/null \
+           | grep -m1 -- '--class=freetvos-' || true)"
+    [ -n "$cls" ] || continue
+    # Chromium forks helpers that inherit the flag; only the browser process
+    # has a window, and it is the one whose parent is not also a chromium.
+    ppid="$(awk '{print $4}' "/proc/$pid/stat" 2>/dev/null || echo 1)"
+    if grep -qa -- "--class=freetvos-" "/proc/$ppid/cmdline" 2>/dev/null; then
+      continue
+    fi
+    echo "${cls#--class=} $pid"
+  done | sort -u
+}
+
+# --------------------------------------------------------------- tiling -----
+
+apply_layout() {
+  local layout="$1"
+  [ -r "$TEMPLATE" ] || die "missing $TEMPLATE"
+  local script="$STATE_DIR/split-$layout.js"
+  sed "s/@LAYOUT@/$layout/" "$TEMPLATE" > "$script"
+
+  # Load, run, unload. Leaving it loaded would make it re-run on every window
+  # event and fight the user the moment they open anything.
+  local name="freetvos-split-$$"
+  local id
+  id="$(busctl --user call org.kde.KWin /Scripting org.kde.kwin.Scripting \
+        loadScript ss "$script" "$name" 2>/dev/null | awk '{print $2}')" || true
+  busctl --user call org.kde.KWin /Scripting org.kde.kwin.Scripting start >/dev/null 2>&1 || true
+  sleep 0.6
+  busctl --user call org.kde.KWin /Scripting org.kde.kwin.Scripting \
+    unloadScript s "$name" >/dev/null 2>&1 || true
+}
+
+# --------------------------------------------------------------- audio ------
+
+# Silence every service except one. Each pane is its own Chromium process, so
+# the streams cannot be told apart by application name, which is "Chromium" for
+# all of them. They are matched on the owning process id instead.
+route_audio_to() {
+  local want_pid="$1"
+  command -v wpctl >/dev/null || return 0
+
+  local ids
+  ids="$(wpctl status 2>/dev/null \
+        | sed -n '/Streams:/,/^$/p' | grep -oE '^[[:space:]|]*[0-9]+' \
+        | tr -d ' |' || true)"
+  [ -n "$ids" ] || return 0
+
+  for id in $ids; do
+    local spid
+    spid="$(wpctl inspect "$id" 2>/dev/null \
+           | sed -n 's/.*application\.process\.id = "\([0-9]*\)".*/\1/p' | head -1)"
+    [ -n "$spid" ] || continue
+    if [ "$spid" = "$want_pid" ]; then
+      wpctl set-mute "$id" 0 >/dev/null 2>&1 || true
+    else
+      wpctl set-mute "$id" 1 >/dev/null 2>&1 || true
+    fi
+  done
+}
+
+focus_pane() {
+  local index="$1"
+  mapfile -t panes < <(running_apps)
+  [ "${#panes[@]}" -gt 0 ] || die "no services are running"
+  index=$(( index % ${#panes[@]} ))
+  local pid="${panes[$index]##* }"
+  local cls="${panes[$index]%% *}"
+
+  # Raising is the compositor's job again.
+  local script="$STATE_DIR/focus.js"
+  cat > "$script" <<JS
+(function () {
+    var all = workspace.windowList ? workspace.windowList() : workspace.clientList();
+    for (var i = 0; i < all.length; i++) {
+        if (String(all[i].resourceClass) === "$cls") {
+            workspace.activeWindow = all[i];
+            return;
+        }
+    }
+})();
+JS
+  local name="freetvos-focus-$$"
+  busctl --user call org.kde.KWin /Scripting org.kde.kwin.Scripting \
+    loadScript ss "$script" "$name" >/dev/null 2>&1 || true
+  busctl --user call org.kde.KWin /Scripting org.kde.kwin.Scripting start >/dev/null 2>&1 || true
+  sleep 0.4
+  busctl --user call org.kde.KWin /Scripting org.kde.kwin.Scripting \
+    unloadScript s "$name" >/dev/null 2>&1 || true
+
+  route_audio_to "$pid"
+  echo "$index" > "$FOCUS_FILE"
+  echo "focus: $cls (pid $pid)"
+}
+
+# --------------------------------------------------------------- entry ------
+
+case "${1:-}" in
+  1|2|4)
+    apply_layout "$1"
+    focus_pane 0
+    ;;
+  next)
+    current=0
+    [ -r "$FOCUS_FILE" ] && current="$(cat "$FOCUS_FILE")"
+    focus_pane $(( current + 1 ))
+    ;;
+  list)
+    running_apps
+    ;;
+  *)
+    sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+    exit 2
+    ;;
+esac

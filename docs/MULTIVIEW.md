@@ -49,6 +49,33 @@ achievable without any new video plumbing, which is the expensive part.
 Latency is the caveat. USB capture adds enough delay to be noticeable, so this
 suits watching rather than playing.
 
+## Attempted, and where it stopped
+
+The controller is written and half of it works. `freetvos-split list` correctly
+identifies the service windows and their process ids, filtering out the
+Chromium helper processes that inherit the same command line. The audio side is
+sound: each pane is its own Chromium process, so streams are matched on
+`application.process.id` rather than application name, which is "Chromium" for
+all of them.
+
+The tiling does not work. KWin accepts the script over DBus, `loadScript`
+returns an id and `start` returns cleanly, and nothing happens. A probe script
+that only minimised windows had no effect either, so the scripts are being
+loaded and never executed. Nothing appears in KWin's log.
+
+The likely cause is that KWin 6 no longer runs scripts injected this way, and
+wants a proper installed script package listed in kwinrc's `[Plugins]` section
+instead. That is the next thing to try, and it changes the shape of the
+solution: the script becomes part of the image and stays resident, reacting to
+a DBus signal rather than being loaded per invocation.
+
+Two other findings worth keeping:
+
+- **Meta is taken.** Pressing it opens Bigscreen's home overlay, so Meta chords
+  collide with the shell. The bindings moved to Ctrl+Alt.
+- **KWin's own quick-tile shortcuts are not registered** in this session, so the
+  usual manual fallback of tiling each window by hand is not available either.
+
 ## Suggested order
 
 1. Two-pane side by side, with audio following focus. This is the whole idea in
