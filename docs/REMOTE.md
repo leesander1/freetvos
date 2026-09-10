@@ -50,6 +50,21 @@ These are bound in `/etc/xdg/kglobalshortcutsrc` to the `XF86Back` and
 tested against a real remote, because the development VM has neither CEC nor an
 infrared receiver.
 
+## None of this works in the development VM
+
+Worth knowing before concluding something is broken. KDE Connect, AirPlay and
+DIAL all need the television to be reachable on the same local network as the
+phone. QEMU's default user-mode networking puts the guest behind a NAT at
+10.0.2.15 where nothing on the real network can reach it, and KDE Connect's
+discovery is a UDP broadcast that does not cross it.
+
+The daemon runs and listens on 1716 in the VM, so it looks healthy from inside
+and is undiscoverable from outside. Bridged networking would fix it, but the
+Homebrew QEMU build has no vmnet backends compiled in, so it is not available
+on this host at all.
+
+These three features can only be tested on real hardware.
+
 ## What is missing
 
 HDMI-CEC, which is what makes an ordinary TV remote drive the box over the

@@ -146,6 +146,13 @@ genuinely supported through UxPlay, including mirroring.
 
 ## Known defects
 
+**The phone and casting features cannot be tested in the VM.** KDE Connect,
+AirPlay and DIAL all need the device reachable on the same LAN as the phone.
+QEMU's user-mode networking hides the guest behind a NAT, and this QEMU build
+has no vmnet backend to bridge with. Everything looks healthy from inside the
+guest, which is misleading: the KDE Connect daemon runs and listens on 1716
+and is simply undiscoverable. Real hardware is the only way to know.
+
 **The TV settings window is light, and the rest of the system is dark.** It is
 the right application now, key-navigable with large type, but it renders in a
 light palette no matter what. Its QML reads Kirigami.Theme rather than
