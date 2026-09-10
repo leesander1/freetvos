@@ -87,11 +87,29 @@ protocol Cast was built on, which the YouTube and Netflix phone apps still
 speak: the phone discovers the TV and tells it which app to open. AirPlay is
 genuinely supported through UxPlay, including mirroring.
 
+## Known defects
+
+**Five of the seven tiles do nothing when selected.** Netflix, Disney+, Hulu,
+YouTube TV and Apple TV+ are all gated on Widevine, which is absent. The
+launcher refuses deliberately rather than opening a browser onto a cryptic
+playback error, but it reports that on stderr, and a television has no stderr.
+The tile simply appears dead. The fix is to surface the refusal on screen as a
+notification, with the remedy, rather than in a log nobody reads. Plex and
+YouTube work, because they need no CDM.
+
+**Every tile icon is blank.** The desktop entries already reference the right
+names, `freetvos-netflix` and so on, so the artwork only has to be drawn and
+installed under `hicolor`. Nothing needs rewiring. See `docs/ASSETS.md`.
+
+**The boot is branded Fedora and KDE, not FreeTVOS.** Five separate surfaces
+between power-on and the home screen, catalogued in `docs/BRANDING.md` with the
+current value and controlling file for each.
+
 ## Not done yet
 
-- Artwork. Every tile is a blank placeholder. See `docs/ASSETS.md`.
 - Real hardware. Raspberry Pi 5 needs bootloader work Fedora does not do yet.
 - `plasma-remotecontrollers` is unpackaged in Fedora, so HDMI-CEC and gamepad
   input need a source build. `libcec` is installed and ready for it.
-- The DIAL receiver is written but untested against a real phone.
+- The DIAL receiver answers discovery and returns valid app state, but has
+  never been driven by a real phone.
 - x86_64 has never been built. `make build ARCH=amd64` should work.

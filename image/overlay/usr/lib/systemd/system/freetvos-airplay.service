@@ -6,17 +6,29 @@ Wants=network-online.target
 Requires=avahi-daemon.service
 
 [Service]
-# UxPlay must share the session's Wayland display to put mirrored video
-# on screen, and its GStreamer pipeline needs the same VAAPI devices the
-# shell uses. -nh keeps the advertised name fixed rather than appending
-# the hostname, so the TV shows up predictably in the iOS picker.
 Type=simple
 User=tv
-ExecStart=/usr/bin/uxplay -n "FreeTVOS" -nh -vs glimagesink -as autoaudiosink
-Restart=on-failure
-RestartSec=5
+
+# -p pins the standard AirPlay ports (7000/7001/7100 TCP, 6000/6001/7011 UDP)
+# instead of binding whatever is free. UxPlay works either way because clients
+# find it over mDNS, but a dynamic port cannot be written into a firewall rule,
+# and this device is meant to sit on a home network behind one.
+#
+# waylandsink, not glimagesink. The shell is Wayland, so this hands buffers
+# straight to the compositor with no GL context of its own. glimagesink needs
+# working EGL and fails outright on hardware without acceleration, which is
+# exactly what a cheap TV box and a QEMU virtio-gpu both are. Override with
+# FREETVOS_VIDEO_SINK on hardware where GL is genuinely faster.
+Environment=FREETVOS_VIDEO_SINK=waylandsink
 Environment=XDG_RUNTIME_DIR=/run/user/1000
 Environment=WAYLAND_DISPLAY=wayland-0
+EnvironmentFile=-/etc/freetvos/airplay.conf
+
+ExecStart=/bin/sh -c 'exec /usr/bin/uxplay -n "FreeTVOS" -nh -p \
+  -vs "$FREETVOS_VIDEO_SINK" -as autoaudiosink'
+
+Restart=on-failure
+RestartSec=5
 
 [Install]
 WantedBy=graphical.target

@@ -1,13 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Ports for the cast receivers. firewalld is not installed by default, so
+  nothing reads this yet; it exists so that adding firewalld later is one
+  package away rather than a research exercise.
+
+  The AirPlay ports below are only correct because the service unit passes
+  uxplay -p to pin them. Without that flag UxPlay binds an ephemeral port and
+  no static rule can match it.
+-->
 <service>
   <short>FreeTVOS Cast</short>
   <description>AirPlay receiver, DIAL receiver and mDNS discovery.</description>
+  <!-- mDNS, used by both receivers for discovery -->
+  <port protocol="udp" port="5353"/>
+  <!-- SSDP discovery and the DIAL HTTP endpoint -->
   <port protocol="udp" port="1900"/>
   <port protocol="tcp" port="56789"/>
+  <!-- AirPlay, pinned by uxplay -p -->
   <port protocol="tcp" port="7000"/>
+  <port protocol="tcp" port="7001"/>
   <port protocol="tcp" port="7100"/>
   <port protocol="udp" port="6000"/>
   <port protocol="udp" port="6001"/>
   <port protocol="udp" port="7011"/>
-  <port protocol="udp" port="5353"/>
 </service>
