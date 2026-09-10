@@ -47,6 +47,7 @@ ssh -p 2222 tv@localhost
 | `docs/ASSETS.md` | What artwork is needed, at what sizes |
 | `docs/BRANDING.md` | Every Fedora and KDE mark between power-on and the home screen |
 | `docs/REMOTE.md` | Using a phone as the remote |
+| `docs/EXTENSIONS.md` | Browser extensions, and the truth about "force 1080p" |
 | `docs/MULTIVIEW.md` | Split-view design, costs and suggested order |
 
 ## Curating the home screen

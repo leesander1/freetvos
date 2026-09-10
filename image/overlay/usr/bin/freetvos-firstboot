@@ -32,6 +32,7 @@ lockBeforeTurnOff=0
 EOF
 
 mkdir -p "$HOME/.local/share/freetvos/webapps"
+mkdir -p "$HOME/.local/share/freetvos/extensions"
 
 # Curate the tile grid. Bigscreen shows every installed desktop entry, so
 # without this the television comes up with a menu editor and an emoji picker

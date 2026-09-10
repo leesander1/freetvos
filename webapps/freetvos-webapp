@@ -21,7 +21,7 @@ APP_DIR="/usr/share/freetvos/webapps"
 APP_FILE="$APP_DIR/$APP_ID.app"
 [ -r "$APP_FILE" ] || { echo "no such app: $APP_ID" >&2; exit 3; }
 
-NAME=""; URL=""; DRM="no"; USER_AGENT=""; SPATIAL_NAV="no"
+NAME=""; URL=""; DRM="no"; USER_AGENT=""; SPATIAL_NAV="no"; EXTENSIONS="yes"
 # shellcheck disable=SC1090
 . "$APP_FILE"
 [ -n "$URL_OVERRIDE" ] && URL="$URL_OVERRIDE"
@@ -82,6 +82,26 @@ FLAGS=(
   "--hide-crash-restore-bubble"
   "--check-for-update-interval=31536000"
 )
+
+# Extensions. Every directory holding a manifest.json under the extensions
+# folder is loaded unpacked. Chromium 152 in Fedora still honours
+# --load-extension; Google disabled that switch upstream in 137, so this is
+# worth re-testing after a Chromium bump rather than assumed to keep working.
+#
+# Set EXTENSIONS="no" in a service's .app file to launch it clean, which is
+# worth doing when diagnosing a playback problem: an extension that rewrites
+# requests is the first thing to rule out.
+if [ "${EXTENSIONS:-yes}" = "yes" ]; then
+  EXT_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/freetvos/extensions"
+  EXT_LIST=""
+  if [ -d "$EXT_DIR" ]; then
+    for d in "$EXT_DIR"/*/; do
+      [ -f "$d/manifest.json" ] || continue
+      EXT_LIST="${EXT_LIST:+$EXT_LIST,}${d%/}"
+    done
+  fi
+  [ -n "$EXT_LIST" ] && FLAGS+=( "--load-extension=$EXT_LIST" )
+fi
 
 # Several services serve a degraded player, or refuse entirely, when they see
 # Linux. The override is per-app because the ones that do not check are better
