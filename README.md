@@ -146,6 +146,14 @@ genuinely supported through UxPlay, including mirroring.
 
 ## Known defects
 
+**The TV settings window is light, and the rest of the system is dark.** It is
+the right application now, key-navigable with large type, but it renders in a
+light palette no matter what. Its QML reads Kirigami.Theme rather than
+hardcoding colours, and the colour scheme, the Plasma theme and the QtQuick
+Controls style were all set dark and verified in config; it stays light anyway.
+Its own System page has a Global theme picker, which is the remaining thing to
+try. Every other Qt dialog on the device is dark.
+
 **Resolution is capped at 720p on the DRM services, and nothing changes
 that.** Netflix, Disney+ and Hulu pick quality from the Widevine robustness
 level, which is L3 on any Linux device. That decision is made on their servers.
