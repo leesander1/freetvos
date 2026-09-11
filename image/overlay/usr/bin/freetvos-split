@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Show two or four services at once, with sound following the focused pane.
 #
+#   freetvos-split toggle  side by side, or back to one
 #   freetvos-split 1      one service, fullscreen
 #   freetvos-split 2      two side by side
 #   freetvos-split 4      four in a grid
@@ -82,9 +83,26 @@ audio_follow_active() {
 }
 
 case "${1:-}" in
-  1) invoke_shortcut "FreeTVOS Single Pane"; audio_follow_active 0 ;;
-  2) invoke_shortcut "FreeTVOS Two Panes";   audio_follow_active 0 ;;
-  4) invoke_shortcut "FreeTVOS Four Panes";  audio_follow_active 0 ;;
+  toggle)
+    # One tile, two states. Two or more services on screen means the viewer
+    # wants them side by side; anything else means go back to one.
+    n="$(running_apps | wc -l | tr -d ' ')"
+    if [ -r "$STATE_DIR/split-on" ]; then
+      rm -f "$STATE_DIR/split-on"
+      invoke_shortcut "FreeTVOS Single Pane"; audio_follow_active 0
+    elif [ "$n" -ge 2 ]; then
+      : > "$STATE_DIR/split-on"
+      invoke_shortcut "FreeTVOS Two Panes"; audio_follow_active 0
+    else
+      echo "Open a second service first; split view needs two." >&2
+      command -v kdialog >/dev/null 2>&1 && kdialog --title "Split View" \
+        --sorry "Open a second service first. Split view needs two." &
+      exit 3
+    fi
+    ;;
+  1) rm -f "$STATE_DIR/split-on"; invoke_shortcut "FreeTVOS Single Pane"; audio_follow_active 0 ;;
+  2) : > "$STATE_DIR/split-on"; invoke_shortcut "FreeTVOS Two Panes";  audio_follow_active 0 ;;
+  4) : > "$STATE_DIR/split-on"; invoke_shortcut "FreeTVOS Four Panes"; audio_follow_active 0 ;;
   next)
     invoke_shortcut "FreeTVOS Next Pane"
     current=0

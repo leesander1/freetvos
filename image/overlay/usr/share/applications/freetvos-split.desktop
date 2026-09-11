@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Split View
+Comment=Show two services at once
+Exec=/usr/bin/freetvos-split toggle
+Icon=freetvos-split
+Categories=AudioVideo;Video;
+Terminal=false
+StartupNotify=false
+X-KDE-FormFactor=tv

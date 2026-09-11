@@ -58,6 +58,12 @@ FLAGS=(
   # used. YouTube TV drew one down the right edge.
   "--hide-scrollbars"
 
+  # Pin the colour scheme reported to pages. Chromium here tells every page it
+  # prefers light even while the desktop portal reports dark, so sites that
+  # follow prefers-color-scheme paint a white background on a television. This
+  # forces the dark branch. Blink's enum is kDark=0, kLight=1.
+  "--blink-settings=preferredColorScheme=0"
+
   # Wayland natively; going through XWayland costs a copy per frame and
   # breaks fractional scaling on 4K panels.
   "--ozone-platform=wayland"

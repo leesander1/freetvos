@@ -57,10 +57,13 @@ function tile(layout) {
     }
 
     if (layout === 1) {
+        splitActive = false;
         wins[0].fullScreen = true;
         workspace.activeWindow = wins[0];
+        applyDimming();
         return;
     }
+    splitActive = true;
 
     var area = workArea();
     var cols = 2;
@@ -78,6 +81,7 @@ function tile(layout) {
         };
     }
     workspace.activeWindow = wins[0];
+    applyDimming();
 }
 
 function focusNext() {
@@ -89,6 +93,30 @@ function focusNext() {
     }
     workspace.activeWindow = wins[(current + 1) % wins.length];
 }
+
+/*
+ * Which pane has focus has to be visible from a sofa. A KWin script cannot
+ * draw an overlay or a border, but it can set opacity, and a brightness
+ * difference reads faster across a room than an outline does.
+ *
+ * Only applied while tiled. In single-pane mode there is nothing to compare
+ * against and dimming would just look like a fault.
+ */
+var splitActive = false;
+var DIM = 0.55;
+
+function applyDimming() {
+    var wins = serviceWindows();
+    for (var i = 0; i < wins.length; i++) {
+        if (!splitActive) {
+            wins[i].opacity = 1.0;
+        } else {
+            wins[i].opacity = (wins[i] === workspace.activeWindow) ? 1.0 : DIM;
+        }
+    }
+}
+
+workspace.windowActivated.connect(function () { applyDimming(); });
 
 registerShortcut("FreeTVOS Single Pane", "FreeTVOS: single pane",
                  "Ctrl+Alt+1", function () { tile(1); });
