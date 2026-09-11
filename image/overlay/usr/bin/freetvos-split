@@ -48,6 +48,14 @@ running_apps() {
   done | sort -u -k2,2n
 }
 
+# Exact, not a substring. pgrep -f matches anywhere in the command line, so
+# "freetvos-youtube" also matches "freetvos-youtubetv"; comparing against the
+# tokens running_apps already extracts avoids inventing a second, subtly
+# different rule for the same question.
+is_running() {
+  running_apps | awk '{print $1}' | grep -qx -- "freetvos-$1"
+}
+
 invoke_shortcut() {
   local name="$1"
   busctl --user call org.kde.kglobalaccel /component/kwin \
@@ -136,8 +144,9 @@ case "${1:-}" in
     wants_save="$(printf '%s\n' "$out" | sed -n '2p')"
 
     for app in $apps; do
-      if ! pgrep -f -- "--class=freetvos-$app" >/dev/null 2>&1; then
-        setsid /usr/bin/freetvos-webapp "$app" >/dev/null 2>&1 < /dev/null &
+      if ! is_running "$app"; then
+        FREETVOS_QUIET=1 setsid /usr/bin/freetvos-webapp "$app" \
+          >"$STATE_DIR/launch-$app.log" 2>&1 < /dev/null &
       fi
     done
     want="$(echo "$apps" | wc -w | tr -d ' ')"
@@ -169,20 +178,41 @@ case "${1:-}" in
       # Already running is the common case when a combo is selected twice;
       # launching a second copy would put two panes of the same service on
       # screen and confuse the pane ordering.
-      if ! pgrep -f -- "--class=freetvos-$app\b" >/dev/null 2>&1; then
-        setsid /usr/bin/freetvos-webapp "$app" >/dev/null 2>&1 < /dev/null &
+      if ! is_running "$app"; then
+        # Kept, not discarded. Sending this to /dev/null is why a service that
+        # refused to start looked like it was merely slow: the reason was
+        # written and thrown away.
+        FREETVOS_QUIET=1 setsid /usr/bin/freetvos-webapp "$app" \
+          >"$STATE_DIR/launch-$app.log" 2>&1 < /dev/null &
       fi
     done
 
-    # Wait for the windows to actually map. Tiling before they exist finds
-    # nothing and silently does nothing, which is how this whole feature
-    # failed the first time.
-    want="$(echo "$APPS" | wc -w | tr -d ' ')"
-    for _ in $(seq 1 40); do
-      [ "$(running_apps | wc -l | tr -d ' ')" -ge "$want" ] && break
+    # Wait for the windows to map. Tiling before they exist finds nothing and
+    # silently does nothing. Sixty seconds because a cold profile on modest
+    # hardware is genuinely slow, and giving up early looks like a failure.
+    for _ in $(seq 1 120); do
+      missing=""
+      for app in $APPS; do
+        is_running "$app" || missing="$missing $app"
+      done
+      [ -z "$missing" ] && break
       sleep 0.5
     done
     sleep 1.5
+
+    if [ -n "$missing" ]; then
+      # Name what did not start, and why if it said. A pane that never appears
+      # with no explanation is the worst outcome; this is the whole reason the
+      # output above is kept.
+      for app in $missing; do
+        reason="$(head -1 "$STATE_DIR/launch-$app.log" 2>/dev/null)"
+        echo "did not start:$app ${reason:+- $reason}" >&2
+      done
+      first="${missing# }"; first="${first%% *}"
+      reason="$(head -1 "$STATE_DIR/launch-$first.log" 2>/dev/null)"
+      command -v kdialog >/dev/null 2>&1 && kdialog --title "Split View" \
+        --sorry "${reason:-$first did not start.}" &
+    fi
 
     : > "$STATE_DIR/split-on"
     case "$LAYOUT" in

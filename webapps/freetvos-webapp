@@ -151,6 +151,13 @@ if [ "$DRM" = "yes" ]; then
     MSG="$NAME needs Widevine, which is not installed."
     # A television has no terminal. Say it on screen, or the tile just looks
     # dead and the reason is buried in a log nobody will ever open.
+    #
+    # Unless something is launching several services at once and will report
+    # for all of them. Two dialogs for one problem is worse than one.
+    if [ -n "${FREETVOS_QUIET:-}" ]; then
+      echo "$MSG Run: sudo freetvos-widevine-install" >&2
+      exit 5
+    fi
     if command -v kdialog >/dev/null 2>&1; then
       kdialog --title "$NAME unavailable" \
         --error "$MSG\n\nRun this once from a terminal or over ssh:\n  sudo freetvos-widevine-install" &
