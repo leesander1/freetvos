@@ -51,19 +51,26 @@ suits watching rather than playing.
 
 ## How to use it
 
-**Split View** in Applications toggles the two services you already have open
-side by side, and back again.
+**Split View** in Applications asks on screen which service goes in each pane,
+then opens and tiles them. It works from a standing start, rather than assuming
+the viewer already knew to open two services first.
 
-**Quick-launch tiles** open a set of services and tile them in one action:
+The picker is a page served over localhost rather than a native dialog. The
+services are web apps already, so a page inherits the same d-pad handling and
+the same look, and it can show the services' own icons without a toolkit.
+
+Ticking **Save as a quick launch tile** on the confirmation step creates a tile
+that reopens that pair in one action, with an icon composed from the two
+services' own icons so the pairing is legible on the grid.
+
+The same tiles can be made from a shell:
 
 ```bash
 freetvos-combo add --apps "plex youtube"
 ```
 
-That creates a tile labelled from the service names, with an icon composed from
-their own icons so the pairing is legible on the grid. `--name`, `--layout`
-and `--icon` override the defaults; `freetvos-combo list` and `remove` manage
-them.
+`--name`, `--layout` and `--icon` override the defaults; `freetvos-combo list`
+and `remove` manage them.
 
 From a keyboard: Ctrl+Alt+2 for two panes, Ctrl+Alt+4 for four, Ctrl+Alt+1 to
 go back to one, Ctrl+Alt+Tab to move focus. No remote sends these, and Meta is

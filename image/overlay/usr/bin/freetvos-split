@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Show two or four services at once, with sound following the focused pane.
 #
+#   freetvos-split pick   choose on screen what goes in each pane
 #   freetvos-split toggle  side by side, or back to one
 #   freetvos-split 1      one service, fullscreen
 #   freetvos-split 2      two side by side
@@ -37,6 +38,10 @@ running_apps() {
     [ -n "$cls" ] || continue
     # Chromium's helper processes inherit the flag; only the browser process
     # has a window, and it is the one whose parent does not share the flag.
+    # The picker is a service window by class but is not a pane. Without this
+    # it gets tiled alongside the services, and two pickers left running end up
+    # tiled against each other.
+    case "$cls" in --class=freetvos-picker) continue ;; esac
     ppid="$(awk '{print $4}' "/proc/$pid/stat" 2>/dev/null || echo 1)"
     grep -qa -- "--class=freetvos-" "/proc/$ppid/cmdline" 2>/dev/null && continue
     echo "${cls#--class=} $pid"
@@ -114,6 +119,42 @@ case "${1:-}" in
     current=0
     [ -r "$STATE_DIR/split-focus" ] && current="$(cat "$STATE_DIR/split-focus")"
     audio_follow_active $(( current + 1 ))
+    ;;
+  pick)
+    # Ask on screen which services go in which pane, then do it. This is what
+    # the Split View tile runs: toggling only helps once two services are
+    # already open, which assumes the viewer knew to open them first.
+    # One picker at a time. A second instance receives the remote's keypresses
+    # alongside the first, and both end up on screen.
+    pkill -f -- "--class=freetvos-picker" 2>/dev/null || true
+    pkill -f "/usr/bin/freetvos-pick" 2>/dev/null || true
+    sleep 1
+
+    out="$(/usr/bin/freetvos-pick || true)"
+    [ -n "$out" ] || exit 0
+    apps="$(printf '%s\n' "$out" | head -1)"
+    wants_save="$(printf '%s\n' "$out" | sed -n '2p')"
+
+    for app in $apps; do
+      if ! pgrep -f -- "--class=freetvos-$app" >/dev/null 2>&1; then
+        setsid /usr/bin/freetvos-webapp "$app" >/dev/null 2>&1 < /dev/null &
+      fi
+    done
+    want="$(echo "$apps" | wc -w | tr -d ' ')"
+    for _ in $(seq 1 40); do
+      [ "$(running_apps | wc -l | tr -d ' ')" -ge "$want" ] && break
+      sleep 0.5
+    done
+    sleep 1.5
+
+    : > "$STATE_DIR/split-on"
+    invoke_shortcut "FreeTVOS Two Panes"
+    audio_follow_active 0
+
+    if [ "$wants_save" = "SAVE" ]; then
+      /usr/bin/freetvos-combo add --apps "$apps" >/dev/null 2>&1 \
+        && echo "saved as a quick launch tile"
+    fi
     ;;
   launch)
     # Open a saved set of services and tile them in one action.

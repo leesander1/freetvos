@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
 Name=Split View
-Comment=Show two services at once
-Exec=/usr/bin/freetvos-split toggle
+Comment=Choose two services to show side by side
+Exec=/usr/bin/freetvos-split pick
 Icon=freetvos-split
 Categories=AudioVideo;Video;
 Terminal=false

@@ -1,0 +1,251 @@
+#!/usr/bin/env python3
+"""On-screen picker: choose which service goes in each pane.
+
+Serves a page over localhost and opens it fullscreen, rather than drawing a
+native dialog. The services are web apps already, so the picker being a page
+means it inherits the same d-pad handling and the same look, and it can show
+the services' own icons without a toolkit.
+
+Prints the chosen service ids to stdout, and SAVE on a third line if the viewer
+asked to keep the pair as a quick-launch tile. The caller does the launching;
+this only asks the question.
+"""
+import html
+import http.server
+import json
+import os
+import re
+import socket
+import subprocess
+import sys
+import threading
+from pathlib import Path
+from urllib.parse import urlparse
+
+SERVICE_DEFS = Path("/usr/share/freetvos/webapps")
+ICONS = Path("/usr/share/icons/hicolor/scalable/apps")
+
+result: dict = {}
+done = threading.Event()
+
+
+def services() -> list[dict]:
+    out = []
+    for f in sorted(SERVICE_DEFS.glob("*.app")):
+        text = f.read_text()
+        name = re.search(r'^NAME="([^"]*)"', text, re.M)
+        out.append({"id": f.stem, "name": name.group(1) if name else f.stem})
+    return out
+
+
+PAGE = """<!doctype html><meta charset="utf-8"><title>Split View</title>
+<style>
+ :root{--bg:#0B0E14;--surface:#151A23;--accent:#3DDC97;--text:#E6EAF2;--dim:#8C97AB}
+ *{box-sizing:border-box}
+ [hidden]{display:none!important}
+ body{margin:0;background:var(--bg);color:var(--text);
+      font:16px system-ui,-apple-system,"Noto Sans",sans-serif;
+      /* 5% inset keeps everything inside TV title-safe */
+      padding:5vh 5vw}
+ h1{font-size:44px;margin:0 0 6px}
+ p.step{color:var(--dim);font-size:24px;margin:0 0 40px}
+ .grid{display:flex;flex-wrap:wrap;gap:28px}
+ .tile{width:230px;background:var(--surface);border-radius:18px;padding:24px;
+       text-align:center;border:4px solid transparent;transition:border-color 90ms}
+ .tile.sel{border-color:var(--accent);box-shadow:0 0 26px rgba(61,220,151,.4)}
+ .tile img{width:120px;height:120px;display:block;margin:0 auto 16px}
+ .tile .lbl{font-size:22px}
+ .chosen{margin-top:44px;font-size:24px;color:var(--dim)}
+ .chosen b{color:var(--text)}
+ .row{display:flex;gap:28px;align-items:center;margin-top:36px}
+ .btn{background:var(--surface);border:4px solid transparent;border-radius:14px;
+      padding:18px 30px;font-size:22px;color:var(--text)}
+ .btn.sel{border-color:var(--accent)}
+ .hint{margin-top:40px;color:var(--dim);font-size:20px}
+</style>
+<h1>Split View</h1>
+<p class="step" id="step">Choose the left pane</p>
+<div class="grid" id="grid"></div>
+<div class="chosen" id="chosen"></div>
+<div class="row" id="actions" hidden>
+  <div class="btn" id="save">Save as a quick launch tile</div>
+  <div class="btn" id="go">Open</div>
+</div>
+<p class="hint">Arrow keys to move, Enter to choose, Backspace to go back.</p>
+<script>
+const SERVICES = __SERVICES__;
+let stage = 0;              // 0 = left, 1 = right, 2 = confirm
+let index = 0;
+let picked = [];
+let save = false;
+let actionIndex = 1;        // default to Open, not Save
+
+const grid = document.getElementById('grid');
+const step = document.getElementById('step');
+const chosen = document.getElementById('chosen');
+const actions = document.getElementById('actions');
+const saveBtn = document.getElementById('save');
+const goBtn = document.getElementById('go');
+
+SERVICES.forEach((s, i) => {
+  const d = document.createElement('div');
+  d.className = 'tile';
+  d.innerHTML = '<img src="/icon/freetvos-' + s.id + '.svg" alt=""><div class="lbl">'
+              + s.name + '</div>';
+  grid.appendChild(d);
+});
+
+function render() {
+  [...grid.children].forEach((el, i) =>
+    el.classList.toggle('sel', stage < 2 && i === index));
+  grid.hidden = stage === 2;
+  actions.hidden = stage !== 2;
+  saveBtn.classList.toggle('sel', stage === 2 && actionIndex === 0);
+  goBtn.classList.toggle('sel', stage === 2 && actionIndex === 1);
+  saveBtn.textContent = (save ? '\\u2713 ' : '') + 'Save as a quick launch tile';
+  step.textContent = stage === 0 ? 'Choose the left pane'
+                   : stage === 1 ? 'Choose the right pane'
+                   : 'Ready';
+  chosen.innerHTML = picked.map((p, i) =>
+    (i === 0 ? 'Left: ' : 'Right: ') + '<b>' +
+    SERVICES.find(s => s.id === p).name + '</b>').join(' &nbsp; ');
+}
+
+function submit() {
+  fetch('/choose', {
+    method: 'POST',
+    body: JSON.stringify({ apps: picked, save: save })
+  }).then(() => {
+    document.body.innerHTML =
+      '<h1>Opening\\u2026</h1><p class="step">' +
+      picked.map(p => SERVICES.find(s => s.id === p).name).join(' and ') + '</p>';
+  });
+}
+
+addEventListener('keydown', e => {
+  const cols = Math.max(1, Math.floor(grid.clientWidth / 258));
+  if (stage < 2) {
+    if (e.key === 'ArrowRight') index = Math.min(SERVICES.length - 1, index + 1);
+    else if (e.key === 'ArrowLeft') index = Math.max(0, index - 1);
+    else if (e.key === 'ArrowDown') index = Math.min(SERVICES.length - 1, index + cols);
+    else if (e.key === 'ArrowUp') index = Math.max(0, index - cols);
+    else if (e.key === 'Enter') {
+      picked.push(SERVICES[index].id);
+      stage += 1;
+      index = 0;
+      if (stage === 2) actionIndex = 1;
+    } else if (e.key === 'Backspace') {
+      if (picked.length) { picked.pop(); stage -= 1; }
+    } else return;
+  } else {
+    if (e.key === 'ArrowLeft') actionIndex = 0;
+    else if (e.key === 'ArrowRight') actionIndex = 1;
+    else if (e.key === 'Enter') {
+      if (actionIndex === 0) { save = !save; }
+      else { submit(); return; }
+    } else if (e.key === 'Backspace') { stage = 1; picked.pop(); }
+    else return;
+  }
+  e.preventDefault();
+  render();
+});
+render();
+</script>
+"""
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *_a):
+        pass
+
+    def _send(self, code, body=b"", ctype="text/html; charset=utf-8"):
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if body:
+            self.wfile.write(body)
+
+    def do_GET(self):
+        path = urlparse(self.path).path
+        if path == "/":
+            page = PAGE.replace("__SERVICES__", json.dumps(services()))
+            self._send(200, page.encode())
+            return
+        if path.startswith("/icon/"):
+            # Served from here rather than linked as file://, which a page
+            # loaded over http is not allowed to reach.
+            name = Path(path).name
+            f = ICONS / name
+            if f.exists() and f.suffix == ".svg":
+                self._send(200, f.read_bytes(), "image/svg+xml")
+                return
+            self._send(404)
+            return
+        self._send(404)
+
+    def do_POST(self):
+        if urlparse(self.path).path != "/choose":
+            self._send(404)
+            return
+        n = int(self.headers.get("Content-Length") or 0)
+        try:
+            result.update(json.loads(self.rfile.read(n) or b"{}"))
+        except Exception:
+            pass
+        self._send(200, b"ok")
+        done.set()
+
+
+def free_port() -> int:
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+def main() -> int:
+    if len(services()) < 2:
+        print("need at least two services", file=sys.stderr)
+        return 2
+
+    port = free_port()
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+    profile = Path(os.environ.get("XDG_DATA_HOME",
+                                  Path.home() / ".local/share")) / "freetvos/webapps/_picker"
+    browser = subprocess.Popen([
+        "/usr/bin/chromium-browser",
+        f"--app=http://localhost:{port}/",
+        f"--user-data-dir={profile}",
+        "--class=freetvos-picker",
+        "--ozone-platform=wayland",
+        "--force-device-scale-factor=1",
+        "--start-fullscreen",
+        "--hide-scrollbars",
+        "--password-store=basic",
+        "--no-first-run",
+    ])
+
+    # Give up rather than hang forever if the window is closed or never appears.
+    done.wait(timeout=300)
+    server.shutdown()
+    browser.terminate()
+    try:
+        browser.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        browser.kill()
+
+    apps = result.get("apps") or []
+    if len(apps) < 2:
+        return 1
+    print(" ".join(apps))
+    if result.get("save"):
+        print("SAVE")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
