@@ -16,24 +16,3 @@
 # so the bindings are correct on paper and unverified in practice.
 [kwin]
 Window Close=XF86Back\tXF86HomePage\tMeta+Backspace,Meta+Ctrl+Escape,Close Window
-
-# Split view. Plasma binds custom shortcuts to desktop entries, which is why
-# each layout has a NoDisplay launcher of its own.
-#
-# Ctrl+Alt rather than Meta: Meta on its own opens Bigscreen's home overlay,
-# the menu with Search, Tasks and Settings, so Meta chords fight it.
-# These work from a keyboard during development. A remote sends
-# none of these, so the layouts are not reachable from the sofa yet; the
-# colour keys XF86Red and friends are the usual TV convention and are the
-# obvious thing to add once tested against real remote hardware.
-[services][freetvos-split-1.desktop]
-_launch=Ctrl+Alt+1,none,Single pane
-
-[services][freetvos-split-2.desktop]
-_launch=Ctrl+Alt+2,none,Two panes
-
-[services][freetvos-split-4.desktop]
-_launch=Ctrl+Alt+4,none,Four panes
-
-[services][freetvos-split-next.desktop]
-_launch=Ctrl+Alt+Tab,none,Next pane

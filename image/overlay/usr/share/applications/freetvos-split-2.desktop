@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Two panes
-Exec=/usr/bin/freetvos-split 2
-Icon=freetvos-settings
-Terminal=false
-# A launcher only so that a global shortcut has something to bind to; Plasma's
-# custom shortcuts attach to desktop entries. It has no business on the grid.
-NoDisplay=true

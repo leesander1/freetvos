@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Next pane
-Exec=/usr/bin/freetvos-split next
-Icon=freetvos-settings
-Terminal=false
-# A launcher only so that a global shortcut has something to bind to; Plasma's
-# custom shortcuts attach to desktop entries. It has no business on the grid.
-NoDisplay=true

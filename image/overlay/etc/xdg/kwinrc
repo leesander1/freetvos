@@ -1,0 +1,5 @@
+# Enable the split-view script. KWin only loads scripts listed here; a script
+# present on disk but not enabled is inert, and one injected over DBus is
+# accepted and then ignored.
+[Plugins]
+freetvos-splitEnabled=true

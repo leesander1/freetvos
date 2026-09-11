@@ -1,0 +1,14 @@
+{
+  "KPackageStructure": "KWin/Script",
+  "KPlugin": {
+    "Id": "freetvos-split",
+    "Name": "FreeTVOS Split View",
+    "Description": "Tile service windows into two or four panes",
+    "Authors": [{ "Name": "FreeTVOS" }],
+    "License": "MIT",
+    "Version": "0.1.0",
+    "EnabledByDefault": true
+  },
+  "X-Plasma-API": "javascript",
+  "X-Plasma-MainScript": "code/main.js"
+}
