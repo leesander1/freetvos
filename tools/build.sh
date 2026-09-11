@@ -21,6 +21,7 @@ podman build \
   --build-arg "BRAND_ID=${BRAND_ID}" \
   --build-arg "BRAND_NAME=${BRAND_NAME}" \
   --build-arg "BRAND_VERSION=${BRAND_VERSION}" \
+  --build-arg "BUNDLE_WIDEVINE=${BUNDLE_WIDEVINE:-no}" \
   -f image/Containerfile \
   -t "$TAG" \
   .

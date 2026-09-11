@@ -1,0 +1,20 @@
+[Unit]
+Description=Fetch the Widevine module
+Documentation=man:freetvos-widevine-install(1)
+# Skip entirely once it is installed. /var survives image updates, so this runs
+# once in the life of the device rather than once per boot.
+ConditionPathExists=!/var/lib/freetvos/widevine/libwidevinecdm.so
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/freetvos-widevine-install --auto
+# Never hold up the shell. This downloads a hundred megabytes or so, and a
+# television should be usable while it happens.
+TimeoutStartSec=900
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target

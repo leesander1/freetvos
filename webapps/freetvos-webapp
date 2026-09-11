@@ -145,10 +145,20 @@ if [ "$DRM" = "yes" ]; then
     aarch64|arm64)  CDM_PLATFORM=linux_arm64 ;;
     *)              CDM_PLATFORM=unknown ;;
   esac
-  CDM_SO="/var/lib/freetvos/widevine/WidevineCdm/_platform_specific/$CDM_PLATFORM/libwidevinecdm.so"
+  # Through /opt, which is the path Chromium itself checks, so this asks the
+  # same question Chromium will. It resolves whether the module was baked into
+  # the image or fetched into /var afterwards.
+  CDM_SO="/opt/google/chrome/WidevineCdm/_platform_specific/$CDM_PLATFORM/libwidevinecdm.so"
 
   if [ ! -e "$CDM_SO" ]; then
-    MSG="$NAME needs Widevine, which is not installed."
+    # If the device is already fetching it, say that instead of asking for a
+    # command. On first boot this is the usual case, and telling someone to open
+    # a terminal when the thing is already downloading is just wrong.
+    if systemctl is-active --quiet freetvos-widevine-install.service 2>/dev/null; then
+      MSG="$NAME needs Widevine, which is downloading now. Try again in a minute."
+    else
+      MSG="$NAME needs Widevine, which is not installed."
+    fi
     # A television has no terminal. Say it on screen, or the tile just looks
     # dead and the reason is buried in a log nobody will ever open.
     #

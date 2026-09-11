@@ -10,6 +10,7 @@ FROM ${BASE_IMAGE}
 ARG BRAND_ID=freetvos
 ARG BRAND_NAME=FreeTVOS
 ARG BRAND_VERSION=0.1.0
+ARG BUNDLE_WIDEVINE=no
 
 LABEL org.opencontainers.image.title="${BRAND_NAME}" \
       org.opencontainers.image.version="${BRAND_VERSION}" \
@@ -163,11 +164,36 @@ RUN chmod 0755 /usr/bin/freetvos-webapp /usr/bin/freetvos-firstboot \
 # ---------------------------------------------------------------------------
 # sshd is how you inspect a running TV. It has no keyboard and no terminal,
 # so without it a failed service is invisible.
+# Widevine, baked in or not.
+#
+# Bundling is only appropriate for an image that stays on your own machines:
+# the licence does not permit redistributing the module. When bundled it lives
+# in /usr, so it is part of the image and survives the /var wipe that a disk
+# rebuild performs. When not, /opt points at /var and the module is fetched on
+# the device by the timer instead.
+#
+# The same script does the work either way, pointed at a different root, so the
+# bundled path is not a second, less-tested copy of the extraction and patching.
+RUN if [ "$BUNDLE_WIDEVINE" = "yes" ]; then \
+      FREETVOS_CDM_ROOT=/usr/lib/freetvos/widevine \
+        /usr/bin/freetvos-widevine-install \
+      && rm -f /opt/google/chrome/WidevineCdm \
+      && ln -sfn /usr/lib/freetvos/widevine/WidevineCdm \
+                 /opt/google/chrome/WidevineCdm \
+      && echo "Widevine bundled into the image"; \
+    else \
+      echo "Widevine will be fetched on the device"; \
+    fi
+
 RUN systemctl enable sddm avahi-daemon bluetooth NetworkManager sshd \
  && systemctl enable freetvos-user-groups.service \
+
  && systemctl --global enable freetvos-cec-claim.service \
  && systemctl enable freetvos-airplay.service freetvos-firstboot.service freetvos-dial.service \
- && systemctl set-default graphical.target
+ && systemctl set-default graphical.target \
+ && if [ "$BUNDLE_WIDEVINE" != "yes" ]; then \
+      systemctl enable freetvos-widevine-install.timer; \
+    fi
 
 # bootc requires /var to stay empty at build time; anything written here would
 # become a one-time factory default rather than real state.

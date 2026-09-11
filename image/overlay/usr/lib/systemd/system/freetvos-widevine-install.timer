@@ -1,0 +1,16 @@
+[Unit]
+Description=Retry fetching the Widevine module
+# Same condition as the service: once the module is there, the timer has
+# nothing left to do.
+ConditionPathExists=!/var/lib/freetvos/widevine/libwidevinecdm.so
+
+[Timer]
+# First boot usually has no network yet: the viewer is still choosing a wifi
+# network in the first-run screens. Retrying is the difference between working
+# by the time they reach Netflix and never working at all.
+OnBootSec=2min
+OnUnitInactiveSec=5min
+Unit=freetvos-widevine-install.service
+
+[Install]
+WantedBy=timers.target

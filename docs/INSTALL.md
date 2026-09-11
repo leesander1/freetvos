@@ -70,15 +70,19 @@ Two more that a VM cannot answer honestly:
 - **The boot splash.** It has never been seen: boot reaches the shell in about
   five seconds and QEMU's display is inactive for part of that window.
 
-## Widevine here is easier than on ARM
+## Widevine
 
-x86_64 takes the module straight from Google's own Chrome package, with no
-ChromeOS extraction and no patching:
+Already in the image, baked in at build time, so there is nothing to run. The
+first thing worth checking is simply that it survived the trip:
 
 ```bash
-sudo freetvos-widevine-install
 freetvos-widevine-check
 ```
 
-Expect the check to report L3 and not L1. That is the 720p ceiling, and it is
-the same on every Linux device.
+Expect L3 and not L1. That is the 720p ceiling and it is the same on every
+Linux device, because L1 is hardware-backed and issued only to licensed device
+manufacturers.
+
+This only works because the image is not being distributed. If you ever hand
+one to someone else, set `BUNDLE_WIDEVINE="no"` in `brand/brand.env` first and
+the device will fetch the module itself instead.

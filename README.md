@@ -105,12 +105,17 @@ it up as a tile.
 
 ## Two constraints worth knowing before you plan around them
 
-**DRM works, but caps at 720p.** Netflix, Disney+, Hulu, YouTube TV and Apple
-TV+ all require Widevine, and one command installs it:
+**DRM works, and needs no setup.** Netflix, Disney+, Hulu, YouTube TV and Apple
+TV+ all require Widevine, and the module is baked into the image at build time,
+so it is there from first boot with no command to run and no network needed.
 
-```bash
-sudo freetvos-widevine-install
-```
+That is only appropriate because this image stays on your own machines. The
+licence does not permit redistributing the module. Set `BUNDLE_WIDEVINE="no"`
+in `brand/brand.env` before building anything that leaves the machine; the
+device then fetches it itself on first boot, retrying until the network is up,
+which is what Raspberry Pi OS and LibreELEC do.
+
+Either way `freetvos-widevine-check` confirms it on screen.
 
 On x86_64 that takes the module straight from Google's own Chrome package. On
 ARM there is no such package, because Google publishes no aarch64 Widevine for

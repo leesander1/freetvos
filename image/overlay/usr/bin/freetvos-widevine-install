@@ -17,10 +17,36 @@ set -euo pipefail
 # profile, would mean one CDM per service and a re-install every time a new
 # service is added.
 CDM_ROOT="${FREETVOS_CDM_ROOT:-/var/lib/freetvos/widevine}"
+CONF="${FREETVOS_WIDEVINE_CONF:-/etc/freetvos/widevine.conf}"
 
 ARCH="$(uname -m)"
+AUTO=0
+[ "${1:-}" = "--auto" ] && { AUTO=1; shift; }
 
 die() { echo "$*" >&2; exit 1; }
+
+# --auto is how the boot-time service calls this. It respects the opt-out and
+# stays quiet about a missing network, because on first boot there usually is
+# none yet and the timer will simply try again.
+if [ "$AUTO" = "1" ]; then
+  AUTO_INSTALL=yes
+  # shellcheck disable=SC1090
+  [ -r "$CONF" ] && . "$CONF"
+  [ "${AUTO_INSTALL:-yes}" = "yes" ] || { echo "auto-install disabled in $CONF"; exit 0; }
+  # Nothing to reach yet: exit cleanly so the timer retries rather than the
+  # unit entering a failed state the viewer might see in a status screen.
+  curl -fsS --max-time 10 -o /dev/null "https://dl.google.com/" 2>/dev/null \
+    || { echo "no network yet; will retry"; exit 0; }
+fi
+
+# Ask the question Chromium asks, following the symlink, so a module baked
+# into the image counts as installed and this does not download it again.
+if find -L /opt/google/chrome/WidevineCdm -name libwidevinecdm.so -size +1k \
+     2>/dev/null | grep -q . ; then
+  echo "already installed"
+  exit 0
+fi
+[ -f "$CDM_ROOT/libwidevinecdm.so" ] && { echo "already installed"; exit 0; }
 
 [ "$(id -u)" -eq 0 ] || die "Run this with sudo: sudo freetvos-widevine-install"
 
