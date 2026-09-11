@@ -34,7 +34,11 @@ fi
 sed "s|@SSH_KEY@|${SSH_KEY}|" image/config.toml.in > output/config.toml
 
 echo ">> Producing $TYPE for $ARCH from $TAG"
-podman run --rm --privileged \
+# --platform matters: the builder installs the target's own packages into the
+# image it is assembling, so an aarch64 builder handed x86_64 rpms fails with
+# "intended for a different architecture". The builder has to be the same
+# architecture as what it is building.
+podman run --rm --privileged --platform "linux/${ARCH}" \
   --security-opt label=type:unconfined_t \
   -v "$(pwd)/output:/output" \
   -v "$(pwd)/output/config.toml:/config.toml:ro" \

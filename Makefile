@@ -3,7 +3,7 @@ export
 
 ARCH ?= $(ARCH_DEFAULT)
 
-.PHONY: help build disk iso run widevine clean lint
+.PHONY: help build disk iso run widevine export clean lint
 
 help:
 	@echo "$(BRAND_NAME) $(BRAND_VERSION)"
@@ -12,6 +12,7 @@ help:
 	@echo "  make iso            produce an installer ISO in ./output"
 	@echo "  make run            boot ./output/qcow2/disk.qcow2 in QEMU"
 	@echo "  make widevine       install the CDM on the running VM (cached)"
+	@echo "  make export         save the image for installing on real hardware"
 	@echo "  make lint           shellcheck and python syntax checks"
 	@echo "  make clean          remove build output"
 
@@ -29,6 +30,12 @@ run:
 
 widevine:
 	@tools/install-widevine.sh
+
+export:
+	@mkdir -p output
+	@echo ">> Exporting $(IMAGE_REF):$(BRAND_VERSION)-$(ARCH) for offline install"
+	podman save -o output/$(BRAND_ID)-$(ARCH).tar $(IMAGE_REF):$(BRAND_VERSION)-$(ARCH)
+	@ls -lh output/$(BRAND_ID)-$(ARCH).tar
 
 lint:
 	@python3 -m py_compile cast/dial/freetvos-dial.py \

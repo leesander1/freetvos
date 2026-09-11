@@ -48,7 +48,8 @@ ssh -p 2222 tv@localhost
 | `docs/BRANDING.md` | Every Fedora and KDE mark between power-on and the home screen |
 | `docs/REMOTE.md` | Using a phone as the remote |
 | `docs/EXTENSIONS.md` | Browser extensions, and the truth about "force 1080p" |
-| `docs/MULTIVIEW.md` | Split-view design, costs and suggested order |
+| `docs/MULTIVIEW.md` | Split-view design, costs and where it stopped |
+| `docs/INSTALL.md` | Getting it onto real x86_64 hardware |
 
 ## Curating the home screen
 
@@ -181,7 +182,10 @@ the root filesystem is mounted.
   input need a source build. `libcec` is installed and ready for it.
 - The DIAL receiver answers discovery and returns valid app state, but has
   never been driven by a real phone.
-- x86_64 has never been built. `make build ARCH=amd64` should work.
+- x86_64 disk images cannot be cross-built on Apple Silicon: the builder runs
+  podman inside itself and that fails under emulation. The container image
+  builds fine, so installation goes through `bootc install` on the target
+  instead. See `docs/INSTALL.md`.
 - Split view across two or four panes with audio following focus. Designed in
   `docs/MULTIVIEW.md`, not started.
 - Real continue-watching from Plex and Jellyfin, which unlike the DRM services
