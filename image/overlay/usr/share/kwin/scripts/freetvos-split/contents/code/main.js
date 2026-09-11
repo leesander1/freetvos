@@ -57,13 +57,11 @@ function tile(layout) {
     }
 
     if (layout === 1) {
-        splitActive = false;
         wins[0].fullScreen = true;
         workspace.activeWindow = wins[0];
-        applyDimming();
+        clearDimming();
         return;
     }
-    splitActive = true;
 
     var area = workArea();
     var cols = 2;
@@ -81,7 +79,7 @@ function tile(layout) {
         };
     }
     workspace.activeWindow = wins[0];
-    applyDimming();
+    clearDimming();
 }
 
 function focusNext() {
@@ -95,28 +93,20 @@ function focusNext() {
 }
 
 /*
- * Which pane has focus has to be visible from a sofa. A KWin script cannot
- * draw an overlay or a border, but it can set opacity, and a brightness
- * difference reads faster across a room than an outline does.
+ * Focus is shown by the page itself, not from here.
  *
- * Only applied while tiled. In single-pane mode there is nothing to compare
- * against and dimming would just look like a fault.
+ * The only thing a KWin script can change about a window's appearance is its
+ * opacity, and dimming the pane you are not watching defeats the purpose of
+ * showing two at once. The highlight is drawn by the bundled tv-focus
+ * extension instead, which can put a coloured border exactly on the window
+ * edge because these are chromeless app windows.
+ *
+ * Opacity is reset here so a pane left dimmed by an earlier version recovers.
  */
-var splitActive = false;
-var DIM = 0.55;
-
-function applyDimming() {
+function clearDimming() {
     var wins = serviceWindows();
-    for (var i = 0; i < wins.length; i++) {
-        if (!splitActive) {
-            wins[i].opacity = 1.0;
-        } else {
-            wins[i].opacity = (wins[i] === workspace.activeWindow) ? 1.0 : DIM;
-        }
-    }
+    for (var i = 0; i < wins.length; i++) wins[i].opacity = 1.0;
 }
-
-workspace.windowActivated.connect(function () { applyDimming(); });
 
 registerShortcut("FreeTVOS Single Pane", "FreeTVOS: single pane",
                  "Ctrl+Alt+1", function () { tile(1); });

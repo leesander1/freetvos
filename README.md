@@ -186,7 +186,7 @@ the root filesystem is mounted.
   podman inside itself and that fails under emulation. The container image
   builds fine, so installation goes through `bootc install` on the target
   instead. See `docs/INSTALL.md`.
-- Split view across two or four panes with audio following focus. Designed in
-  `docs/MULTIVIEW.md`, not started.
+- Remote keys for split view. The shortcuts are on Ctrl+Alt chords that no
+  remote sends, and Meta is taken by the home overlay.
 - Real continue-watching from Plex and Jellyfin, which unlike the DRM services
   do publish the necessary APIs.

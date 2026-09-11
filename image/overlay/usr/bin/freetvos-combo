@@ -1,0 +1,168 @@
+#!/usr/bin/env python3
+"""Quick-launch tiles that open several services side by side at once.
+
+A combo is a named set of services plus a layout. Selecting its tile opens all
+of them and tiles them in one action, instead of opening each from the grid and
+then arranging them.
+
+Everything lives in the user's own XDG directories. /usr is a read-only image
+under bootc, so anything written there would fail outright and be discarded by
+the next update anyway.
+"""
+import argparse
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+DATA_HOME = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
+CONF_HOME = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+
+COMBOS = Path(os.environ.get("FREETVOS_COMBOS", CONF_HOME / "freetvos/combos.d"))
+APPS_DIR = DATA_HOME / "applications"
+ICON_DIR = DATA_HOME / "icons/hicolor/scalable/apps"
+SERVICE_ICONS = Path("/usr/share/icons/hicolor/scalable/apps")
+SERVICE_DEFS = Path("/usr/share/freetvos/webapps")
+
+
+def slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
+
+def service_name(app: str) -> str:
+    """The display name from the service definition, for the tile label."""
+    f = SERVICE_DEFS / f"{app}.app"
+    if f.exists():
+        m = re.search(r'^NAME="([^"]*)"', f.read_text(), re.M)
+        if m:
+            return m.group(1)
+    return app
+
+
+def compose_icon(apps: list[str], out: Path) -> bool:
+    """Build one icon from the services' own icons, laid out like the panes.
+
+    Inlined rather than referenced. An <image href> pointing at another file
+    would depend on the renderer resolving relative paths from an icon theme
+    directory, which is not something to rely on.
+    """
+    inner = []
+    cols = 2 if len(apps) > 1 else 1
+    rows = 2 if len(apps) > 2 else 1
+    for i, app in enumerate(apps[: cols * rows]):
+        src = SERVICE_ICONS / f"freetvos-{app}.svg"
+        if not src.exists():
+            return False
+        body = src.read_text()
+        body = re.sub(r"^.*?<svg[^>]*>", "", body, flags=re.S)
+        body = re.sub(r"</svg>\s*$", "", body, flags=re.S)
+        scale = 1.0 / max(cols, rows)
+        x = (i % cols) * (512 / cols)
+        y = (i // cols) * (512 / rows)
+        inner.append(
+            f'<g transform="translate({x:.1f},{y:.1f}) scale({scale:.3f})">'
+            f"{body}</g>"
+        )
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" '
+        'width="512" height="512">\n'
+        '<rect width="512" height="512" rx="104" fill="#0B0E14"/>\n'
+        + "\n".join(inner)
+        + "\n</svg>\n"
+    )
+    return True
+
+
+def cmd_add(args: argparse.Namespace) -> int:
+    apps = args.apps.split()
+    if len(apps) < 2:
+        print("a combo needs at least two services", file=sys.stderr)
+        return 2
+    for app in apps:
+        if not (SERVICE_DEFS / f"{app}.app").exists():
+            print(f"no such service: {app}", file=sys.stderr)
+            return 3
+
+    name = args.name or " + ".join(service_name(a) for a in apps)
+    cid = slug(name)
+    layout = args.layout or (4 if len(apps) > 2 else 2)
+
+    COMBOS.mkdir(parents=True, exist_ok=True)
+    (COMBOS / f"{cid}.combo").write_text(
+        f'NAME="{name}"\nAPPS="{" ".join(apps)}"\nLAYOUT={layout}\n'
+    )
+
+    icon = args.icon or "freetvos-split"
+    composed = ICON_DIR / f"freetvos-combo-{cid}.svg"
+    if not args.icon and compose_icon(apps, composed):
+        icon = str(composed)
+
+    APPS_DIR.mkdir(parents=True, exist_ok=True)
+    (APPS_DIR / f"freetvos-combo-{cid}.desktop").write_text(
+        "[Desktop Entry]\n"
+        "Type=Application\n"
+        f"Name={name}\n"
+        f"Comment=Open {len(apps)} services side by side\n"
+        f"Exec=/usr/bin/freetvos-split launch {cid}\n"
+        f"Icon={icon}\n"
+        "Categories=AudioVideo;Video;\n"
+        "Terminal=false\n"
+        "StartupNotify=false\n"
+        "X-KDE-FormFactor=tv\n"
+    )
+    subprocess.run(["kbuildsycoca6"], capture_output=True, check=False)
+    print(f'added "{name}" ({" + ".join(apps)}, {layout} panes)')
+    return 0
+
+
+def cmd_list(_args: argparse.Namespace) -> int:
+    if not COMBOS.exists() or not any(COMBOS.glob("*.combo")):
+        print("no combos")
+        return 0
+    for f in sorted(COMBOS.glob("*.combo")):
+        text = f.read_text()
+        name = re.search(r'^NAME="([^"]*)"', text, re.M)
+        apps = re.search(r'^APPS="([^"]*)"', text, re.M)
+        print(f"{f.stem:24} {apps.group(1) if apps else '':28} "
+              f"{name.group(1) if name else ''}")
+    return 0
+
+
+def cmd_remove(args: argparse.Namespace) -> int:
+    for path in (COMBOS / f"{args.id}.combo",
+                 APPS_DIR / f"freetvos-combo-{args.id}.desktop",
+                 ICON_DIR / f"freetvos-combo-{args.id}.svg"):
+        path.unlink(missing_ok=True)
+    subprocess.run(["kbuildsycoca6"], capture_output=True, check=False)
+    print(f"removed {args.id}")
+    return 0
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(prog="freetvos-combo", description=__doc__)
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    a = sub.add_parser("add", help="create a quick-launch tile")
+    a.add_argument("--apps", required=True,
+                   help='services, space separated, e.g. "plex youtube"')
+    a.add_argument("--name", help="tile label; defaults to the service names")
+    a.add_argument("--layout", type=int, choices=(2, 4),
+                   help="panes; defaults to 2 for two services, 4 for more")
+    a.add_argument("--icon", help="icon name or path; defaults to a composite")
+    a.set_defaults(func=cmd_add)
+
+    sub.add_parser("list", help="show combos").set_defaults(func=cmd_list)
+
+    r = sub.add_parser("remove", help="delete a combo")
+    r.add_argument("id")
+    r.set_defaults(func=cmd_remove)
+
+    args = p.parse_args()
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

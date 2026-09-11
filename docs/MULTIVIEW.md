@@ -49,32 +49,48 @@ achievable without any new video plumbing, which is the expensive part.
 Latency is the caveat. USB capture adds enough delay to be noticeable, so this
 suits watching rather than playing.
 
-## Attempted, and where it stopped
+## How to use it
 
-The controller is written and half of it works. `freetvos-split list` correctly
-identifies the service windows and their process ids, filtering out the
-Chromium helper processes that inherit the same command line. The audio side is
-sound: each pane is its own Chromium process, so streams are matched on
-`application.process.id` rather than application name, which is "Chromium" for
-all of them.
+**Split View** in Applications toggles the two services you already have open
+side by side, and back again.
 
-The tiling does not work. KWin accepts the script over DBus, `loadScript`
-returns an id and `start` returns cleanly, and nothing happens. A probe script
-that only minimised windows had no effect either, so the scripts are being
-loaded and never executed. Nothing appears in KWin's log.
+**Quick-launch tiles** open a set of services and tile them in one action:
 
-The likely cause is that KWin 6 no longer runs scripts injected this way, and
-wants a proper installed script package listed in kwinrc's `[Plugins]` section
-instead. That is the next thing to try, and it changes the shape of the
-solution: the script becomes part of the image and stays resident, reacting to
-a DBus signal rather than being loaded per invocation.
+```bash
+freetvos-combo add --apps "plex youtube"
+```
 
-Two other findings worth keeping:
+That creates a tile labelled from the service names, with an icon composed from
+their own icons so the pairing is legible on the grid. `--name`, `--layout`
+and `--icon` override the defaults; `freetvos-combo list` and `remove` manage
+them.
 
-- **Meta is taken.** Pressing it opens Bigscreen's home overlay, so Meta chords
-  collide with the shell. The bindings moved to Ctrl+Alt.
-- **KWin's own quick-tile shortcuts are not registered** in this session, so the
-  usual manual fallback of tiling each window by hand is not available either.
+From a keyboard: Ctrl+Alt+2 for two panes, Ctrl+Alt+4 for four, Ctrl+Alt+1 to
+go back to one, Ctrl+Alt+Tab to move focus. No remote sends these, and Meta is
+unavailable because it opens the home overlay, so choosing remote keys needs
+real hardware to test against.
+
+The focused pane is outlined in the accent colour, and the sound follows it.
+
+## What it took, and three bugs worth remembering
+
+**KWin ignores scripts injected over DBus.** loadScript returns an id, start
+returns cleanly, and nothing runs. The script has to be installed as a package
+and enabled in kwinrc, which also lets it register its own shortcuts.
+
+**Chromium's --class is not the Wayland app id.** Filtering windows on
+resourceClass starting with freetvos- matched nothing. Every normal window is
+taken instead, which is also more correct here: the shell is not a normal
+window, so the only normal windows are the services.
+
+**Chromium rewrites its process title.** /proc/PID/cmdline is one
+space-separated blob with no NUL separators, so splitting on NUL gives a single
+line: an unanchored grep returns the whole command line as the "class", and an
+anchored one never matches. The token has to be extracted with a regex.
+
+The focus indicator is drawn by the bundled browser extension, not the
+compositor. The only appearance a KWin script can change is opacity, and
+dimming the pane you are not watching defeats the point of showing two.
 
 ## Suggested order
 

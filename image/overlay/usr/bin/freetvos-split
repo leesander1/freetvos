@@ -6,6 +6,7 @@
 #   freetvos-split 2      two side by side
 #   freetvos-split 4      four in a grid
 #   freetvos-split next   move focus, and the sound, to the next pane
+#   freetvos-split launch <id>   open a saved combo and tile it
 #   freetvos-split list   show which services are on screen
 #
 # The same shortcuts work directly from a keyboard: Ctrl+Alt+1, 2, 4 and Tab.
@@ -26,8 +27,13 @@ die() { echo "$*" >&2; exit 1; }
 # first without any channel between them.
 running_apps() {
   for pid in $(pgrep -f -- "--class=freetvos-" 2>/dev/null || true); do
-    cls="$(tr '\0' '\n' < "/proc/$pid/cmdline" 2>/dev/null \
-           | grep -m1 -- '--class=freetvos-' || true)"
+    # Pull the token out of the command line rather than expecting it on a
+    # line of its own. Chromium rewrites its process title, so /proc/PID/cmdline
+    # is one space-separated blob with no NUL separators: splitting on NUL
+    # yields a single line, which an unanchored grep returns whole and an
+    # anchored grep never matches. Extracting the token works either way.
+    cls="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null \
+           | grep -oE -m1 -- '--class=freetvos-[a-z0-9-]+' | head -1 || true)"
     [ -n "$cls" ] || continue
     # Chromium's helper processes inherit the flag; only the browser process
     # has a window, and it is the one whose parent does not share the flag.
@@ -108,6 +114,41 @@ case "${1:-}" in
     current=0
     [ -r "$STATE_DIR/split-focus" ] && current="$(cat "$STATE_DIR/split-focus")"
     audio_follow_active $(( current + 1 ))
+    ;;
+  launch)
+    # Open a saved set of services and tile them in one action.
+    id="${2:-}"; [ -n "$id" ] || die "which combo?"
+    combo="${XDG_CONFIG_HOME:-$HOME/.config}/freetvos/combos.d/$id.combo"
+    [ -r "$combo" ] || die "no such combo: $id"
+    NAME=""; APPS=""; LAYOUT=2
+    # shellcheck disable=SC1090
+    . "$combo"
+
+    for app in $APPS; do
+      # Already running is the common case when a combo is selected twice;
+      # launching a second copy would put two panes of the same service on
+      # screen and confuse the pane ordering.
+      if ! pgrep -f -- "--class=freetvos-$app\b" >/dev/null 2>&1; then
+        setsid /usr/bin/freetvos-webapp "$app" >/dev/null 2>&1 < /dev/null &
+      fi
+    done
+
+    # Wait for the windows to actually map. Tiling before they exist finds
+    # nothing and silently does nothing, which is how this whole feature
+    # failed the first time.
+    want="$(echo "$APPS" | wc -w | tr -d ' ')"
+    for _ in $(seq 1 40); do
+      [ "$(running_apps | wc -l | tr -d ' ')" -ge "$want" ] && break
+      sleep 0.5
+    done
+    sleep 1.5
+
+    : > "$STATE_DIR/split-on"
+    case "$LAYOUT" in
+      4) invoke_shortcut "FreeTVOS Four Panes" ;;
+      *) invoke_shortcut "FreeTVOS Two Panes" ;;
+    esac
+    audio_follow_active 0
     ;;
   list) running_apps ;;
   *) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;

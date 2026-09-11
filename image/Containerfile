@@ -141,6 +141,7 @@ RUN chmod 0755 /usr/bin/freetvos-webapp /usr/bin/freetvos-firstboot \
               /usr/bin/freetvos-widevine-check \
               /usr/bin/freetvos-apps /usr/bin/freetvos-pin \
               /usr/bin/freetvos-settings /usr/bin/freetvos-split \
+              /usr/bin/freetvos-combo \
  && python3 /usr/share/freetvos/generate-desktop-entries.py \
  && python3 /usr/share/freetvos/curate-apps.py \
  && python3 /usr/share/freetvos/brand-os-release.py \
