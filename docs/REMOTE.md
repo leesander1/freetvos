@@ -65,10 +65,37 @@ on this host at all.
 
 These three features can only be tested on real hardware.
 
+## HDMI-CEC, so the TV's own remote drives the box
+
+Already present, and enabled. This was previously recorded here as needing a
+source build of plasma-remotecontrollers; that was wrong. The standalone
+project is gone from KDE and its job moved into
+`plasma-bigscreen-inputhandler`, which ships with the shell, links libcec and
+starts with the session.
+
+Check it with:
+
+```bash
+freetvos-cec status
+```
+
+In the development VM that reports CEC enabled and no adapter present, which is
+correct: there is no HDMI at all. On real hardware it should find `/dev/cec0`.
+Two things to check if it does not:
+
+- CEC must be enabled in the television's own settings, where it is rarely
+  called CEC. Look for Anynet+, Bravia Sync, SimpLink, Viera Link or AQUOS Link.
+- Not every HDMI port carries CEC, and not every cable connects the pin.
+
+The box also asks the television to switch to its input at login, the way a
+games console does, so it does not boot to whatever input was left selected.
+`freetvos-cec claim` does it by hand.
+
+None of this has been tested against a real television.
+
 ## What is missing
 
-HDMI-CEC, which is what makes an ordinary TV remote drive the box over the
-HDMI cable itself, needs `plasma-remotecontrollers`. Fedora does not package
-it, so it needs building from source. `libcec` is installed and ready for it.
-Until then a Bluetooth remote or keyboard pairs normally through **System
-Settings**, and Bigscreen already maps d-pad and media keys.
+Nothing in the remote path, as far as can be told without hardware. What
+remains is choosing which remote keys drive split view: those shortcuts are on
+Ctrl+Alt chords that no remote sends, and Meta is taken by the home overlay.
+Picking real keysyms needs a remote to press.

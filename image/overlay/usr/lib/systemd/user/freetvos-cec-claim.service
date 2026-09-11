@@ -1,0 +1,20 @@
+[Unit]
+Description=Ask the television to switch to this input
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+# What a games console does when it powers on. Without it the box boots to a
+# television still showing whatever input it was left on, and the viewer has to
+# find the right one themselves.
+#
+# Delayed because the input handler has to be up and have found the adapter
+# first; asking before it is ready simply fails. Failure is not an error: most
+# of the time there is no CEC adapter at all.
+Type=oneshot
+ExecStartPre=/usr/bin/sleep 8
+ExecStart=-/usr/bin/freetvos-cec claim
+RemainAfterExit=no
+
+[Install]
+WantedBy=graphical-session.target

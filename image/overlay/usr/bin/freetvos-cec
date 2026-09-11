@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# HDMI-CEC helper: check the link, and claim the TV's input.
+#
+#   freetvos-cec status    is an adapter present, and is CEC enabled
+#   freetvos-cec claim     ask the television to switch to this input
+#
+# CEC itself is handled by plasma-bigscreen-inputhandler, which ships with the
+# shell, links libcec and has it enabled by default. Nothing needed building:
+# the standalone plasma-remotecontrollers project this used to live in is gone
+# from KDE, and its job moved into the input handler.
+set -euo pipefail
+
+SVC=org.kde.plasma.bigscreen.inputhandler
+OBJ=/InputHandler
+
+call() {
+  busctl --user call "$SVC" "$OBJ" "$SVC" "$@" 2>/dev/null | awk '{print $2}'
+}
+
+case "${1:-status}" in
+  status)
+    enabled="$(busctl --user get-property "$SVC" "$OBJ" "$SVC" cecEnabled 2>/dev/null \
+               | awk '{print $2}')"
+    connected="$(call isCecControllerConnected)"
+    gamepad="$(call isSdlControllerConnected)"
+    printf '%-22s %s\n' "CEC enabled" "${enabled:-unknown}"
+    printf '%-22s %s\n' "CEC adapter present" "${connected:-unknown}"
+    printf '%-22s %s\n' "Gamepad present" "${gamepad:-unknown}"
+    if [ "${connected:-false}" != "true" ]; then
+      echo
+      echo "No CEC adapter. Expected in a VM, which has no HDMI at all."
+      echo "On real hardware, check /dev/cec0 exists and that CEC is enabled"
+      echo "in the television's own settings, where it is often named"
+      echo "Anynet+, Bravia Sync, SimpLink, Viera Link or similar."
+    fi
+    ;;
+  claim)
+    # Ask the television to switch to this HDMI input, the way a console does
+    # when you turn it on.
+    r="$(call sendActiveSource)"
+    [ "$r" = "true" ] && echo "asked the television to switch to this input" \
+                      || echo "no CEC adapter to ask" >&2
+    ;;
+  *)
+    sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'
+    exit 2
+    ;;
+esac

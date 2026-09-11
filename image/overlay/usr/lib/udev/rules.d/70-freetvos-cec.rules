@@ -1,0 +1,11 @@
+# Let the session reach the HDMI-CEC adapter.
+#
+# CEC appears as /dev/cec0 once the kernel driver binds, and on most systems it
+# is owned by root with no group access, so the input handler cannot open it and
+# the remote silently does nothing. There is no CEC device in a VM, so this can
+# only be confirmed on real hardware.
+#
+# uaccess is the part that matters: it grants an ACL to whoever is logged in at
+# the seat, which is the right model for a single-seat appliance. The group is
+# a fallback for anything that starts before the session.
+KERNEL=="cec[0-9]*", SUBSYSTEM=="cec", GROUP="video", MODE="0660", TAG+="uaccess"

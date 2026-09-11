@@ -178,8 +178,8 @@ the root filesystem is mounted.
 ## Not done yet
 
 - Real hardware. Raspberry Pi 5 needs bootloader work Fedora does not do yet.
-- `plasma-remotecontrollers` is unpackaged in Fedora, so HDMI-CEC and gamepad
-  input need a source build. `libcec` is installed and ready for it.
+- Remote keys for split view. Its shortcuts are on Ctrl+Alt chords no remote
+  sends, and Meta is taken by the home overlay.
 - The DIAL receiver answers discovery and returns valid app state, but has
   never been driven by a real phone.
 - x86_64 disk images cannot be cross-built on Apple Silicon: the builder runs
