@@ -1,0 +1,152 @@
+#!/usr/bin/env python3
+"""Game streaming from a PC in the house, through Moonlight.
+
+Not in any Fedora repository, so it arrives as a Flatpak. Installed into the
+viewer's own directory rather than system-wide: that needs no root, and under
+bootc it is the only place it could persist anyway, since /usr is a read-only
+image and anything written there would be discarded by the next update.
+
+Not installed until somebody asks. The application is small and the runtime
+underneath it is most of a gigabyte, and a television that spends its first
+boot quietly downloading that is a television that appears broken.
+
+  freetvos-moonlight            open it, installing first if it is not here
+  freetvos-moonlight install    just install it
+  freetvos-moonlight status     whether it is here, and which version
+  freetvos-moonlight remove
+"""
+import argparse
+import json
+import os
+import subprocess
+import sys
+import threading
+
+APP_ID = "com.moonlight_stream.Moonlight"
+FLATHUB = "https://dl.flathub.org/repo/flathub.flatpakrepo"
+
+
+def flatpak(*args, capture: bool = True):
+    argv = ["flatpak", "--user", *args]
+    try:
+        return subprocess.run(argv, capture_output=capture, text=True,
+                              timeout=None)
+    except OSError:
+        return None
+
+
+def installed() -> bool:
+    done = flatpak("info", APP_ID)
+    return bool(done and done.returncode == 0)
+
+
+def version() -> str:
+    done = flatpak("info", APP_ID)
+    if not done or done.returncode != 0:
+        return ""
+    for line in done.stdout.splitlines():
+        if line.strip().lower().startswith("version:"):
+            return line.split(":", 1)[1].strip()
+    return "installed"
+
+
+def add_remote() -> bool:
+    """Flathub, fetched over https so its signing key comes with it.
+
+    The alternative is shipping the key in the image, which then has to be kept
+    current by hand; asking Flathub for its own repository description is what
+    the documented command does.
+    """
+    done = flatpak("remote-add", "--if-not-exists", "flathub", FLATHUB)
+    return bool(done and done.returncode == 0)
+
+
+def install(on_line=None) -> bool:
+    """Install, reporting progress as it goes.
+
+    Line by line rather than at the end, because this takes minutes and a
+    television showing nothing for minutes is a television somebody reboots.
+    """
+    if not add_remote():
+        if on_line:
+            on_line("Could not reach Flathub.")
+        return False
+    argv = ["flatpak", "--user", "install", "-y", "--noninteractive",
+            "flathub", APP_ID]
+    try:
+        process = subprocess.Popen(argv, stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT, text=True,
+                                   bufsize=1)
+    except OSError as exc:
+        if on_line:
+            on_line(str(exc))
+        return False
+    assert process.stdout is not None
+    for line in process.stdout:
+        line = line.strip()
+        if line and on_line:
+            on_line(line)
+    return process.wait() == 0
+
+
+def launch() -> int:
+    argv = ["flatpak", "--user", "run", APP_ID]
+    try:
+        os.execvp(argv[0], argv)
+    except OSError as exc:
+        print(f"could not start Moonlight: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Commands.
+# ---------------------------------------------------------------------------
+
+
+def cmd_status(_args) -> int:
+    if not installed():
+        print("not installed")
+        return 1
+    print(f"installed, version {version()}")
+    return 0
+
+
+def cmd_install(_args) -> int:
+    ok = install(on_line=lambda line: print(line, flush=True))
+    print("installed" if ok else "install failed", file=sys.stderr)
+    return 0 if ok else 1
+
+
+def cmd_remove(_args) -> int:
+    done = flatpak("uninstall", "-y", "--noninteractive", APP_ID)
+    if done and done.returncode == 0:
+        print("removed")
+        return 0
+    print("nothing to remove", file=sys.stderr)
+    return 1
+
+
+def cmd_open(_args) -> int:
+    if installed():
+        return launch()
+    sys.path.insert(0, "/usr/share/freetvos")
+    import moonlightui
+    return moonlightui.run(sys.modules[__name__])
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        prog="freetvos-moonlight", description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="cmd")
+    sub.add_parser("open").set_defaults(func=cmd_open)
+    sub.add_parser("install").set_defaults(func=cmd_install)
+    sub.add_parser("status").set_defaults(func=cmd_status)
+    sub.add_parser("remove").set_defaults(func=cmd_remove)
+    args = parser.parse_args()
+    return (args.func if args.cmd else cmd_open)(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Game Streaming
+Comment=Play a game running on a PC in the house, through Moonlight
+Exec=/usr/bin/freetvos-moonlight open
+Icon=freetvos-moonlight
+Categories=Game;
+Terminal=false
+StartupNotify=true
+X-KDE-FormFactor=tv

@@ -219,7 +219,15 @@ class App:
                     return
                 query = dict(urllib.parse.parse_qsl(
                     urlparse(self.path).query, keep_blank_values=True))
-                self._send(200, page(app.title, handler(query)).encode())
+                try:
+                    body = handler(query)
+                except Exception as exc:                      # noqa: BLE001
+                    # A blank browser window is the least useful thing a
+                    # television can show, and there is no console here to find
+                    # out what went wrong from.
+                    body = ('<h1>Something went wrong</h1><p class="step">'
+                            + str(exc)[:300] + "</p>")
+                self._send(200, page(app.title, body).encode())
 
             def do_POST(self):
                 path = urlparse(self.path).path

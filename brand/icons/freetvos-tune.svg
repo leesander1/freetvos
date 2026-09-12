@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect x="16" y="16" width="480" height="480" rx="104" fill="#2A3242"/>
+  <!-- A screen and a sound: the two halves of what this tile adjusts. -->
+  <rect x="88" y="112" width="336" height="216" rx="20" fill="none"
+        stroke="#FFFFFF" stroke-width="26"/>
+  <rect x="200" y="356" width="112" height="24" rx="12" fill="#FFFFFF"/>
+  <g fill="#3DDC97">
+    <path d="M150 186 h34 l44 -36 v124 l-44 -36 h-34 z"/>
+    <path d="M262 178 a52 52 0 0 1 0 84" fill="none" stroke="#3DDC97"
+          stroke-width="20" stroke-linecap="round"/>
+    <path d="M296 154 a86 86 0 0 1 0 132" fill="none" stroke="#3DDC97"
+          stroke-width="20" stroke-linecap="round"/>
+  </g>
+</svg>

@@ -52,6 +52,7 @@ ssh -p 2222 tv@localhost
 | `docs/HDMI-INPUT.md` | Watching a console through a USB capture device |
 | `docs/SERVICES.md` | Adding and removing apps on the device |
 | `docs/LIBRARY.md` | Your own media, from a drive or a server |
+| `docs/EXTRAS.md` | Picture, sound, Bluetooth and game streaming |
 | `docs/INSTALL.md` | Getting it onto real x86_64 hardware |
 
 ## Adding an app

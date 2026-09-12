@@ -61,6 +61,7 @@ lint:
 	@python3 tools/test-hdmi.py
 	@python3 tools/test-services.py
 	@python3 tools/test-media.py
+	@python3 tools/test-tune.py
 	@echo "lint ok"
 
 clean:

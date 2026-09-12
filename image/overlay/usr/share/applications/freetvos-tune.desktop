@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Picture & Sound
+Comment=Screen size, where the sound comes out, and Bluetooth devices
+Exec=/usr/bin/freetvos-tune show
+Icon=freetvos-tune
+Categories=Settings;
+Terminal=false
+StartupNotify=true
+X-KDE-FormFactor=tv

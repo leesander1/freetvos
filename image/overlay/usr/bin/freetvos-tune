@@ -1,0 +1,360 @@
+#!/usr/bin/env python3
+"""Picture, sound, and the things you pair with a television.
+
+Plasma has settings for all three and none of them are reachable here: the
+television settings application exits without a window when started from
+anything but the shell itself, and what it does show assumes a pointer. This is
+the same three controls in the same idiom as the rest of this system.
+
+  freetvos-tune show       the page, which is what the tile opens
+  freetvos-tune status     what is set now
+  freetvos-tune outputs    sound outputs, one line each
+  freetvos-tune modes      picture sizes this screen offers
+  freetvos-tune devices    paired and nearby Bluetooth devices
+
+Everything here shells out to the tools that already own these settings rather
+than talking to the compositor or the audio server directly. They are the
+supported interface, they are already installed, and a wrapper around them
+cannot drift from what the rest of the system believes.
+"""
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+
+SCAN_SECONDS = 12
+CALL_TIMEOUT = 30
+# bluetoothctl waits for a controller to turn up rather than saying there is
+# none, so every call to it is on a short leash.
+BLUETOOTH_TIMEOUT = 8
+ADAPTERS = "/sys/class/bluetooth"
+
+
+def run(argv: list, timeout: int = CALL_TIMEOUT) -> str:
+    try:
+        done = subprocess.run(argv, capture_output=True, text=True,
+                              timeout=timeout)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return done.stdout
+
+
+# ---------------------------------------------------------------------------
+# Picture.
+# ---------------------------------------------------------------------------
+
+
+def displays() -> list:
+    """Connected screens and the sizes they offer, best first."""
+    raw = run(["kscreen-doctor", "-j"])
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return []
+    out = []
+    for screen in data.get("outputs", []):
+        if not screen.get("connected"):
+            continue
+        modes = []
+        for mode in screen.get("modes", []):
+            size = mode.get("size") or {}
+            width, height = size.get("width", 0), size.get("height", 0)
+            if not width or not height:
+                continue
+            modes.append({
+                "id": str(mode.get("id")),
+                "w": width, "h": height,
+                "rate": round(float(mode.get("refreshRate") or 0), 2),
+            })
+        # Largest first, then smoothest, which is the order someone scanning a
+        # list of sizes expects to read them in.
+        modes.sort(key=lambda m: (m["w"] * m["h"], m["rate"]), reverse=True)
+        out.append({
+            "name": screen.get("name") or f"Screen {screen.get('id')}",
+            "current": str(screen.get("currentModeId") or ""),
+            "overscan": int(screen.get("overscan") or 0),
+            "modes": modes,
+        })
+    return out
+
+
+def mode_label(mode: dict) -> str:
+    return f"{mode['w']}x{mode['h']} at {mode['rate']:g}Hz"
+
+
+def set_mode(output: str, mode_id: str) -> bool:
+    return subprocess.run(["kscreen-doctor",
+                           f"output.{output}.mode.{mode_id}"],
+                          capture_output=True).returncode == 0
+
+
+def set_overscan(output: str, percent: int) -> bool:
+    return subprocess.run(["kscreen-doctor",
+                           f"output.{output}.overscan.{int(percent)}"],
+                          capture_output=True).returncode == 0
+
+
+# ---------------------------------------------------------------------------
+# Sound.
+# ---------------------------------------------------------------------------
+
+
+def outputs() -> list:
+    """Everywhere sound can come out, with the one in use marked."""
+    try:
+        sinks = json.loads(run(["pactl", "-f", "json", "list", "sinks"]))
+    except ValueError:
+        return []
+    current = run(["pactl", "get-default-sink"]).strip()
+    out = []
+    for sink in sinks:
+        name = sink.get("name") or ""
+        if not name:
+            continue
+        properties = sink.get("properties") or {}
+        label = (sink.get("description")
+                 or properties.get("device.description") or name)
+        out.append({"name": name, "label": label,
+                    "current": name == current,
+                    "kind": _output_kind(name, properties)})
+    return out
+
+
+def _output_kind(name: str, properties: dict) -> str:
+    haystack = f"{name} {properties.get('device.bus', '')}".lower()
+    if "bluez" in haystack or "bluetooth" in haystack:
+        return "Bluetooth"
+    if "hdmi" in haystack:
+        return "HDMI"
+    if "usb" in haystack:
+        return "USB"
+    return "Built in"
+
+
+def set_output(name: str) -> bool:
+    """Switch outputs, and take whatever is already playing with you.
+
+    Setting the default alone moves nothing that has already started, so the
+    film carries on coming out of the television while the headphones sit
+    silent, which reads as the setting having done nothing.
+    """
+    if subprocess.run(["pactl", "set-default-sink", name],
+                      capture_output=True).returncode != 0:
+        return False
+    for line in run(["pactl", "list", "short", "sink-inputs"]).splitlines():
+        stream = line.split("\t")[0].strip()
+        if stream.isdigit():
+            subprocess.run(["pactl", "move-sink-input", stream, name],
+                           capture_output=True)
+    return True
+
+
+def volume() -> int:
+    match = re.search(r"([\d.]+)",
+                      run(["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"]))
+    return int(round(float(match.group(1)) * 100)) if match else 0
+
+
+def set_volume(percent: int) -> None:
+    percent = max(0, min(100, int(percent)))
+    subprocess.run(["wpctl", "set-volume", "-l", "1.0",
+                    "@DEFAULT_AUDIO_SINK@", f"{percent}%"],
+                   capture_output=True)
+
+
+def muted() -> bool:
+    return "MUTED" in run(["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"])
+
+
+def set_muted(on: bool) -> None:
+    subprocess.run(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@",
+                    "1" if on else "0"], capture_output=True)
+
+
+# ---------------------------------------------------------------------------
+# Bluetooth. Headphones and remotes, which is what a television pairs with.
+# ---------------------------------------------------------------------------
+
+DEVICE_LINE = re.compile(r"^Device\s+([0-9A-F:]{17})\s+(.*)$", re.I | re.M)
+
+
+def bluetooth_ready() -> bool:
+    """Is there an adapter at all, asked of the kernel rather than of bluez.
+
+    bluetoothctl does not answer this question quickly. With no adapter present
+    it sits waiting for one to appear until something kills it, which on a page
+    that asks before drawing means the page never draws. The kernel knows
+    immediately.
+    """
+    try:
+        return any(name.startswith("hci") for name in os.listdir(ADAPTERS))
+    except OSError:
+        return False
+
+
+def _device_info(address: str) -> dict:
+    text = run(["bluetoothctl", "info", address], BLUETOOTH_TIMEOUT)
+    def flag(key):
+        return bool(re.search(rf"^\s*{key}:\s*yes", text, re.I | re.M))
+    icon = re.search(r"^\s*Icon:\s*(.+)$", text, re.I | re.M)
+    return {"paired": flag("Paired"), "connected": flag("Connected"),
+            "trusted": flag("Trusted"),
+            "icon": (icon.group(1).strip() if icon else "")}
+
+
+def devices(known_only: bool = True) -> list:
+    """Paired devices first, then anything else the adapter has seen."""
+    if not bluetooth_ready():
+        return []
+    listing = run(["bluetoothctl", "devices"], BLUETOOTH_TIMEOUT)
+    out = []
+    for address, name in DEVICE_LINE.findall(listing):
+        info = _device_info(address)
+        if known_only and not info["paired"]:
+            continue
+        out.append({"address": address, "name": name.strip() or address,
+                    **info})
+    out.sort(key=lambda d: (not d["connected"], not d["paired"],
+                            d["name"].lower()))
+    return out
+
+
+def scan(seconds: int = SCAN_SECONDS) -> list:
+    """Look for something new. Blocking, because there is nothing else to do."""
+    if not bluetooth_ready():
+        return []
+    try:
+        subprocess.run(["bluetoothctl", "--timeout", str(seconds),
+                        "scan", "on"], capture_output=True,
+                       timeout=seconds + 10)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return devices(known_only=False)
+
+
+def pair(address: str) -> tuple:
+    """Pair, trust and connect, which is one action from the viewer's side.
+
+    Trusting matters on an appliance: without it the device has to be accepted
+    again by hand every time it reconnects, and there is nobody sitting at this
+    machine to accept anything.
+    """
+    for step in (["pair", address], ["trust", address], ["connect", address]):
+        try:
+            done = subprocess.run(["bluetoothctl", "--timeout", "25"] + step,
+                                  capture_output=True, text=True, timeout=40)
+        except (OSError, subprocess.SubprocessError):
+            return False, "the adapter did not answer"
+        if done.returncode != 0 and step[0] == "pair":
+            reason = (done.stdout or done.stderr or "").strip().splitlines()
+            return False, (reason[-1] if reason else "pairing failed")
+    return True, ""
+
+
+def _act(argv: list, timeout: int) -> bool:
+    try:
+        return subprocess.run(["bluetoothctl"] + argv, capture_output=True,
+                              timeout=timeout).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def connect(address: str) -> bool:
+    return _act(["--timeout", "25", "connect", address], 40)
+
+
+def disconnect(address: str) -> bool:
+    return _act(["disconnect", address], 30)
+
+
+def forget(address: str) -> bool:
+    return _act(["remove", address], 30)
+
+
+# ---------------------------------------------------------------------------
+# Commands.
+# ---------------------------------------------------------------------------
+
+
+def cmd_status(_args) -> int:
+    for screen in displays():
+        current = next((m for m in screen["modes"]
+                        if m["id"] == screen["current"]), None)
+        print(f"picture:  {screen['name']}  "
+              f"{mode_label(current) if current else 'unknown'}"
+              f"  overscan {screen['overscan']}%")
+    for sink in outputs():
+        if sink["current"]:
+            print(f"sound:    {sink['label']} ({sink['kind']})")
+    print(f"volume:   {volume()}%{'  muted' if muted() else ''}")
+    if not bluetooth_ready():
+        print("bluetooth: no adapter")
+    else:
+        for device in devices():
+            state = "connected" if device["connected"] else "paired"
+            print(f"paired:   {device['name']}  {state}")
+    return 0
+
+
+def cmd_outputs(_args) -> int:
+    found = outputs()
+    if not found:
+        print("no sound outputs")
+        return 1
+    for sink in found:
+        print(f"{'*' if sink['current'] else ' '} {sink['label']}"
+              f"\t{sink['kind']}\t{sink['name']}")
+    return 0
+
+
+def cmd_modes(_args) -> int:
+    for screen in displays():
+        print(screen["name"])
+        for mode in screen["modes"]:
+            mark = "*" if mode["id"] == screen["current"] else " "
+            print(f"  {mark} {mode['id']}\t{mode_label(mode)}")
+    return 0
+
+
+def cmd_devices(args) -> int:
+    if not bluetooth_ready():
+        print("no Bluetooth adapter", file=sys.stderr)
+        return 1
+    found = scan() if args.scan else devices()
+    for device in found:
+        state = ("connected" if device["connected"]
+                 else "paired" if device["paired"] else "nearby")
+        print(f"{device['address']}\t{device['name']}\t{state}")
+    return 0
+
+
+def cmd_show(_args) -> int:
+    sys.path.insert(0, "/usr/share/freetvos")
+    import tuneui
+    return tuneui.run(sys.modules[__name__])
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        prog="freetvos-tune", description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="cmd")
+    sub.add_parser("show").set_defaults(func=cmd_show)
+    sub.add_parser("status").set_defaults(func=cmd_status)
+    sub.add_parser("outputs").set_defaults(func=cmd_outputs)
+    sub.add_parser("modes").set_defaults(func=cmd_modes)
+    p_dev = sub.add_parser("devices")
+    p_dev.add_argument("--scan", action="store_true")
+    p_dev.set_defaults(func=cmd_devices)
+
+    args = parser.parse_args()
+    if not args.cmd:
+        parser.print_help()
+        return 2
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

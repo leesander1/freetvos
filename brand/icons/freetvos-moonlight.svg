@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect x="16" y="16" width="480" height="480" rx="104" fill="#2A3242"/>
+  <!-- A controller, because that is what someone is looking for. -->
+  <path d="M152 176 h208 a96 96 0 0 1 92 122 l-22 78 a44 44 0 0 1 -80 10
+           l-30 -50 h-120 l-30 50 a44 44 0 0 1 -80 -10 l-22 -78
+           a96 96 0 0 1 92 -122 z" fill="#FFFFFF"/>
+  <g fill="#2A3242">
+    <rect x="122" y="248" width="76" height="22" rx="11"/>
+    <rect x="149" y="221" width="22" height="76" rx="11"/>
+  </g>
+  <g fill="#3DDC97">
+    <circle cx="344" cy="238" r="19"/>
+    <circle cx="386" cy="276" r="19"/>
+    <circle cx="302" cy="276" r="19"/>
+    <circle cx="344" cy="314" r="19"/>
+  </g>
+</svg>
