@@ -49,6 +49,7 @@ ssh -p 2222 tv@localhost
 | `docs/REMOTE.md` | Using a phone as the remote |
 | `docs/EXTENSIONS.md` | Browser extensions, and the truth about "force 1080p" |
 | `docs/MULTIVIEW.md` | Split-view design, costs and where it stopped |
+| `docs/HDMI-INPUT.md` | Watching a console through a USB capture device |
 | `docs/INSTALL.md` | Getting it onto real x86_64 hardware |
 
 ## Curating the home screen

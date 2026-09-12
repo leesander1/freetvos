@@ -1,0 +1,385 @@
+#!/usr/bin/env python3
+"""Put a capture device on screen, and keep it there while the console sleeps.
+
+mpv is started once, idle, with its window already mapped, and is told to open
+the device over its own IPC socket. That indirection is what separates this from
+a one line script. A games console is usually asleep when you press the input
+button, so there is no signal to open yet; restarting mpv every couple of
+seconds to find out would drop back to the home screen and away again in a loop
+that looks like a crash. An idle mpv holds a black screen with a message on it
+and retries behind that, which is what a television does.
+
+Sound arrives on a separate USB interface from the picture, so it is not part of
+the video stream and mpv cannot play it. It is bridged to the speakers with a
+loopback instead, started when a picture appears and torn down when it goes, so
+an input nobody is watching is not quietly audible.
+
+Everything is passed on the command line by freetvos-hdmi, which owns the
+detection and the settings; nothing here reads configuration.
+"""
+import argparse
+import json
+import os
+import queue
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import threading
+import time
+from pathlib import Path
+
+INPUT_CONF = "/usr/share/freetvos/hdmi/input.conf"
+
+# Tags the loopback so the split view knows which sound stream belongs to the
+# input pane. The stream is owned by the audio server, not by mpv, so there is
+# no process id to match it on.
+STREAM_TAG = "freetvos-hdmi"
+
+RETRY_SECONDS = 2.0
+GONE_SECONDS = 15.0
+
+
+# ---------------------------------------------------------------------------
+# Sound.
+# ---------------------------------------------------------------------------
+
+
+def pulse_source_for_card(card: int):
+    """The capture source belonging to one ALSA card.
+
+    Matched on the card index rather than the name: two identical dongles
+    produce two identically named sources, and picking by name would send the
+    second one's sound to the first one's picture.
+    """
+    if not shutil.which("pactl"):
+        return None
+    try:
+        out = subprocess.run(["pactl", "-f", "json", "list", "sources"],
+                             capture_output=True, text=True, timeout=10)
+        for src in json.loads(out.stdout):
+            props = src.get("properties") or {}
+            if props.get("alsa.card") == str(card) \
+                    and not src.get("name", "").endswith(".monitor"):
+                return src["name"]
+        return None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        pass
+
+    # Older pactl has no JSON output; the text form carries the same two facts.
+    try:
+        out = subprocess.run(["pactl", "list", "sources"],
+                             capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    name = None
+    for line in out.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("Name: "):
+            name = stripped[6:]
+        elif stripped.startswith("alsa.card = ") and name:
+            if stripped.split("=", 1)[1].strip().strip('"') == str(card) \
+                    and not name.endswith(".monitor"):
+                return name
+    return None
+
+
+class Loopback:
+    """The bridge from the capture device's microphone side to the speakers."""
+
+    def __init__(self, card: int, latency_ms: int):
+        self.card = card
+        self.latency = latency_ms
+        self.module = None
+
+    def start(self) -> None:
+        if self.card < 0 or self.module is not None:
+            return
+        source = pulse_source_for_card(self.card)
+        if not source:
+            return
+        base = ["pactl", "load-module", "module-loopback",
+                f"source={source}", f"latency_msec={self.latency}"]
+        tagged = base + [f"sink_input_properties=media.name={STREAM_TAG}"]
+        for args in (tagged, base):
+            try:
+                out = subprocess.run(args, capture_output=True, text=True,
+                                     timeout=10)
+            except (OSError, subprocess.SubprocessError):
+                return
+            index = out.stdout.strip()
+            if out.returncode == 0 and index.isdigit():
+                self.module = index
+                return
+
+    def stop(self) -> None:
+        if self.module is None:
+            return
+        try:
+            subprocess.run(["pactl", "unload-module", self.module],
+                           capture_output=True, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            pass
+        self.module = None
+
+
+# ---------------------------------------------------------------------------
+# Talking to mpv.
+# ---------------------------------------------------------------------------
+
+
+def quit_existing(sock_path: Path) -> None:
+    """Ask a viewer left over from last time to go away.
+
+    Two viewers cannot share one capture device: the second gets EBUSY and
+    shows nothing, which looks exactly like a dead dongle.
+    """
+    if not sock_path.exists():
+        return
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(2)
+        s.connect(str(sock_path))
+        s.sendall(b'{"command":["quit"]}\n')
+        s.close()
+        time.sleep(1.0)
+    except OSError:
+        pass
+
+
+def connect(sock_path: Path, timeout: float = 15.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            s.connect(str(sock_path))
+            return s
+        except OSError:
+            time.sleep(0.2)
+    return None
+
+
+def reader(sock, events: "queue.Queue") -> None:
+    buf = b""
+    try:
+        while True:
+            chunk = sock.recv(65536)
+            if not chunk:
+                break
+            buf += chunk
+            while b"\n" in buf:
+                line, buf = buf.split(b"\n", 1)
+                if not line.strip():
+                    continue
+                try:
+                    events.put(json.loads(line))
+                except ValueError:
+                    pass
+    except OSError:
+        pass
+    events.put({"event": "disconnected"})
+
+
+# ---------------------------------------------------------------------------
+
+
+def mpv_command(sock, *command) -> None:
+    try:
+        sock.sendall(json.dumps({"command": list(command)}).encode() + b"\n")
+    except OSError:
+        pass
+
+
+def build_argv(args, sock_path: Path) -> list:
+    argv = [
+        "mpv",
+        # No user config and no default key bindings. On a television a stray
+        # remote code that happens to map to a letter should do nothing, not
+        # cycle the subtitle track or take a screenshot.
+        "--no-config",
+        f"--input-conf={INPUT_CONF}",
+        "--input-default-bindings=no",
+        f"--input-ipc-server={sock_path}",
+        # Idle with a window, so there is something on screen before there is
+        # anything to show on it.
+        "--idle=yes", "--force-window=yes", "--fullscreen=yes",
+        "--keep-open=no", "--no-osc", "--osd-bar=no",
+        # Wayland only, and a software output behind the accelerated ones.
+        #
+        # Left to itself mpv tries X11 when its first choice fails, and on a
+        # Wayland session with no working EGL that path ends in an assertion
+        # inside the X11 backend rather than a fallback: the window never
+        # appears and the input looks broken. Pinning the context to Wayland
+        # removes the X11 attempt, and wlshm at the end of the list draws
+        # through shared memory with no GL at all, which is what makes this
+        # work on a machine whose driver cannot give mpv a GL context.
+        "--vo=gpu-next,gpu,wlshm",
+        "--gpu-context=wayland",
+        "--cursor-autohide=always",
+        "--title=FreeTVOS Input",
+        # Latency. A capture stream has no timestamps worth honouring and
+        # nothing to seek, so buffering it only delays the picture behind the
+        # controller in someone's hands.
+        "--cache=no", "--demuxer-readahead-secs=0",
+        "--untimed", "--video-latency-hacks=yes",
+        "--vd-lavc-threads=1", "--interpolation=no",
+        "--hwdec=auto-safe",
+        # The sound comes through the loopback, not through here.
+        "--aid=no",
+        "--osd-duration=5000", "--osd-align-x=center", "--osd-align-y=top",
+        "--osd-margin-y=60",
+        f"--osd-playing-msg={args.name} · press Back to return",
+    ]
+
+    if args.deinterlace in ("yes", "auto"):
+        argv.append(f"--deinterlace={args.deinterlace}")
+    if args.aspect in ("16:9", "4:3"):
+        argv.append(f"--video-aspect-override={args.aspect}")
+    elif args.aspect == "fill":
+        argv.append("--keepaspect=no")
+    elif args.aspect == "zoom":
+        argv.append("--panscan=1.0")
+
+    if not args.demo:
+        opts = []
+        if args.input_format:
+            opts.append(f"input_format={args.input_format}")
+        if args.size:
+            opts.append(f"video_size={args.size}")
+        if args.fps:
+            opts.append(f"framerate={args.fps}")
+        if opts:
+            argv.append("--demuxer-lavf-o=" + ",".join(opts))
+        # Only when there is no audio server to bridge through. mpv has to
+        # synchronise it with the picture itself in that case, which it does
+        # less well than the audio server does.
+        if args.audio_card >= 0 and not shutil.which("pactl"):
+            argv.append(f"--audio-file=av://alsa:hw:{args.audio_card},0")
+            argv.remove("--aid=no")
+    return argv
+
+
+def source_url(args) -> str:
+    if args.demo:
+        return "av://lavfi:smptebars=size=1280x720:rate=30"
+    return f"av://v4l2:{args.device}"
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(prog="freetvos-hdmi-view")
+    parser.add_argument("--device", default="")
+    parser.add_argument("--name", default="Input")
+    parser.add_argument("--input-format", default="")
+    parser.add_argument("--size", default="")
+    parser.add_argument("--fps", default="")
+    parser.add_argument("--audio-card", type=int, default=-1)
+    parser.add_argument("--audio-latency", type=int, default=40)
+    parser.add_argument("--aspect", default="auto")
+    parser.add_argument("--deinterlace", default="auto")
+    parser.add_argument("--demo", action="store_true")
+    args = parser.parse_args()
+
+    if not args.demo and not args.device:
+        print("no device given", file=sys.stderr)
+        return 2
+
+    runtime = Path(os.environ.get("XDG_RUNTIME_DIR",
+                                  f"/run/user/{os.getuid()}")) / "freetvos"
+    runtime.mkdir(parents=True, exist_ok=True)
+    sock_path = runtime / "hdmi-ipc.sock"
+    quit_existing(sock_path)
+    try:
+        sock_path.unlink()
+    except OSError:
+        pass
+
+    proc = subprocess.Popen(build_argv(args, sock_path))
+    loopback = Loopback(args.audio_card, args.audio_latency)
+
+    def shutdown(*_a):
+        loopback.stop()
+        if proc.poll() is None:
+            proc.terminate()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, shutdown)
+    signal.signal(signal.SIGINT, shutdown)
+
+    sock = connect(sock_path)
+    if sock is None:
+        proc.terminate()
+        print("mpv did not open its control socket", file=sys.stderr)
+        return 1
+
+    events: "queue.Queue" = queue.Queue()
+    threading.Thread(target=reader, args=(sock, events), daemon=True).start()
+
+    url = source_url(args)
+    mpv_command(sock, "loadfile", url)
+    retry_at = None
+    missing_since = None
+    status = 0
+
+    try:
+        while proc.poll() is None:
+            if retry_at is not None and time.time() >= retry_at:
+                # The node disappearing means the dongle itself was pulled, not
+                # that the console is asleep. Waiting forever for hardware that
+                # is no longer attached is not patience, it is a hang.
+                if not args.demo and not Path(args.device).exists():
+                    if missing_since is None:
+                        missing_since = time.time()
+                    elif time.time() - missing_since > GONE_SECONDS:
+                        break
+                    # Re-sent every tick rather than once. mpv has no way to
+                    # pin a message on screen indefinitely, so the only way to
+                    # keep one there is to keep saying it, with a life longer
+                    # than the gap between retries. Otherwise the wait is a
+                    # black screen with nothing on it explaining the wait,
+                    # which is the one thing a television must never show.
+                    mpv_command(sock, "show-text",
+                                f"{args.name} was disconnected",
+                                int(RETRY_SECONDS * 1000) + 1500)
+                else:
+                    missing_since = None
+                    mpv_command(sock, "loadfile", url)
+                retry_at = time.time() + RETRY_SECONDS
+
+            try:
+                message = events.get(timeout=0.25)
+            except queue.Empty:
+                continue
+
+            event = message.get("event")
+            if event == "file-loaded":
+                retry_at = None
+                missing_since = None
+                loopback.start()
+            elif event == "end-file":
+                loopback.stop()
+                if message.get("reason") == "quit":
+                    break
+                mpv_command(sock, "show-text",
+                            f"No signal on {args.name} · waiting",
+                            int(RETRY_SECONDS * 1000) + 1500)
+                retry_at = time.time() + RETRY_SECONDS
+            elif event in ("shutdown", "disconnected"):
+                break
+    finally:
+        loopback.stop()
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+        try:
+            sock.close()
+        except OSError:
+            pass
+    return status
+
+
+if __name__ == "__main__":
+    sys.exit(main())

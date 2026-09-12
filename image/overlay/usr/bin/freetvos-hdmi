@@ -1,0 +1,626 @@
+#!/usr/bin/env python3
+"""External inputs: a games console or set-top box on a USB capture device.
+
+A television without inputs is not really a television. This gives one to a box
+that has only outputs, using the ten-dollar USB HDMI capture dongles: the kernel
+already sees them as ordinary video-capture devices, so the work is not drivers.
+It is picking a format the dongle can actually sustain, pairing the picture with
+the sound that arrives on a separate USB interface, and putting the result on
+screen with a way back out that works from a remote.
+
+  freetvos-hdmi show       the source list, which is what the tile opens
+  freetvos-hdmi open KEY   put one input on screen
+  freetvos-hdmi settings   configure the inputs
+  freetvos-hdmi list       what is connected, one line each
+  freetvos-hdmi watch      react to a device being plugged in
+  freetvos-hdmi selftest   prove the display path with no dongle attached
+
+Everything the viewer needs is resolved here and passed on the command line, so
+the viewer itself needs no configuration and no knowledge of sysfs.
+"""
+import json
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+SYS = Path(os.environ.get("FREETVOS_HDMI_SYSFS", "/sys"))
+DEV = Path(os.environ.get("FREETVOS_HDMI_DEV", "/dev"))
+CONF_HOME = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+SYSTEM_CONF = Path("/etc/freetvos/hdmi.conf")
+USER_CONF = CONF_HOME / "freetvos/hdmi.conf"
+DEVICE_CONF = Path(os.environ.get("FREETVOS_HDMI_CONFD",
+                                  CONF_HOME / "freetvos/hdmi.d"))
+VIEWER = os.environ.get("FREETVOS_HDMI_VIEWER", "/usr/bin/freetvos-hdmi-view")
+
+DEFAULTS = {
+    "ON_CONNECT": "switch",       # ignore | switch
+    "AUDIO_LATENCY_MS": "40",
+    "MAX_HEIGHT": "1080",
+    "AUTO_OPEN_SINGLE": "no",
+}
+
+DEVICE_DEFAULTS = {
+    "NAME": "",
+    "ROLE": "",                   # input | ignore; empty means decide by kind
+    "MODE": "auto",
+    "AUDIO": "auto",              # auto | none | <alsa card index>
+    "ASPECT": "auto",
+    "DEINTERLACE": "auto",
+    "ON_CONNECT": "inherit",
+}
+
+# ---------------------------------------------------------------------------
+# Configuration, in the same shell-style form as the rest of the system.
+# ---------------------------------------------------------------------------
+
+
+def read_conf(path: Path) -> dict:
+    out = {}
+    try:
+        text = path.read_text()
+    except OSError:
+        return out
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, raw = line.partition("=")
+        try:
+            parts = shlex.split(raw)
+        except ValueError:
+            continue
+        out[key.strip()] = parts[0] if parts else ""
+    return out
+
+
+def write_conf(path: Path, values: dict, header: str = "") -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    body = header + "".join(f'{k}="{v}"\n' for k, v in sorted(values.items()))
+    path.write_text(body)
+
+
+def config() -> dict:
+    """System defaults, then the user's own on top."""
+    merged = dict(DEFAULTS)
+    merged.update(read_conf(SYSTEM_CONF))
+    merged.update(read_conf(USER_CONF))
+    return merged
+
+
+# ---------------------------------------------------------------------------
+# Finding the hardware.
+# ---------------------------------------------------------------------------
+
+# Vendors that only make capture hardware. Matching on the vendor is worth more
+# than matching on the name, because the cheap dongles report names like
+# "USB3. 0" that say nothing at all.
+KNOWN_VENDORS = {
+    "534d": "MacroSilicon",
+    "345f": "MacroSilicon",
+    "0fd9": "Elgato",
+    "07ca": "AVerMedia",
+    "2935": "Magewell",
+    "1164": "YUAN",
+    "eba4": "Generic capture",
+}
+
+HDMI_HINTS = re.compile(
+    r"hdmi|capture|cam ?link|live ?gamer|game ?cap|ezcap|av ?to ?usb|usb3",
+    re.I)
+
+# Checked before the vendor list, because vendors that make capture cards also
+# make webcams, and a webcam that ends up named "HDMI 1" is worse than one that
+# needs promoting by hand.
+CAMERA_HINTS = re.compile(
+    r"web ?cam|face ?cam|face ?time|integrated camera|uvc camera|"
+    r"(?:front|rear|user-facing) camera|depth|infrared",
+    re.I)
+
+FOURCC_TO_FFMPEG = {
+    "MJPG": "mjpeg", "JPEG": "mjpeg",
+    "YUYV": "yuyv422", "UYVY": "uyvy422", "YVYU": "yvyu422",
+    "NV12": "nv12", "NV21": "nv21",
+    "YU12": "yuv420p", "YV12": "yuv420p", "422P": "yuv422p",
+    "RGB3": "rgb24", "BGR3": "bgr24", "AR24": "bgra", "XR24": "bgr0",
+    "RGBP": "rgb565le",
+    "H264": "h264", "HEVC": "hevc", "MPG2": "mpeg2video",
+}
+
+# Which encoding to prefer when two of them offer the same size and rate.
+# Motion JPEG is decoded frame by frame with no reordering, so it reaches the
+# screen sooner than an inter-frame codec; that matters when someone is playing
+# a game through this. Raw is fine but the cheap dongles can only sustain it at
+# single-digit frame rates, which the rate comparison already rejects.
+CODEC_RANK = {"mjpeg": 3, "yuyv422": 2, "uyvy422": 2, "yvyu422": 2,
+              "nv12": 2, "nv21": 2, "yuv420p": 2, "yuv422p": 2,
+              "rgb24": 2, "bgr24": 2, "bgra": 2, "bgr0": 2, "rgb565le": 2,
+              "h264": 1, "hevc": 1, "mpeg2video": 1}
+
+
+def _read(path: Path, default: str = "") -> str:
+    try:
+        return path.read_text().strip()
+    except OSError:
+        return default
+
+
+def _usb_device_dir(node: Path):
+    """Walk up from a v4l2 node to the USB device that owns it.
+
+    The node's `device` link points at a USB *interface*; the identifiers and
+    the sibling sound card live one level further up, on the device itself.
+    """
+    try:
+        current = (node / "device").resolve()
+    except OSError:
+        return None
+    for _ in range(8):
+        if (current / "idVendor").exists():
+            return current
+        if current.parent == current:
+            break
+        current = current.parent
+    return None
+
+
+def _alsa_card(usb_dir) -> int:
+    """The sound card on the same USB device, or -1.
+
+    Pairing by USB topology rather than by name. Two identical dongles report
+    identical names, and matching those to each other's audio would silently
+    cross the two over.
+    """
+    if usb_dir is None:
+        return -1
+    for card in sorted(usb_dir.glob("*/sound/card*")):
+        m = re.match(r"card(\d+)$", card.name)
+        if m:
+            return int(m.group(1))
+    return -1
+
+
+def _parse_formats(text: str) -> list:
+    """Turn `v4l2-ctl --list-formats-ext` output into a list of capture modes.
+
+    Only the capture section. A device can be an output as well, and the kernel
+    ships a test driver that is both; taking every format block would have the
+    television offering to display a device that only accepts pictures.
+    """
+    modes, fourcc, size = [], None, None
+    collecting = True
+    for line in text.splitlines():
+        m = re.match(r"\s*Type:\s*(.+?)\s*$", line)
+        if m:
+            collecting = m.group(1) == "Video Capture"
+            fourcc, size = None, None
+            continue
+        if not collecting:
+            continue
+        m = re.match(r"\s*\[\d+\]:\s*'(\S+)'", line)
+        if m:
+            fourcc, size = m.group(1).strip(), None
+            continue
+        m = re.match(r"\s*Size: Discrete\s+(\d+)x(\d+)", line)
+        if m:
+            size = (int(m.group(1)), int(m.group(2)))
+            modes.append({"fourcc": fourcc, "w": size[0], "h": size[1],
+                          "fps": 0.0})
+            continue
+        m = re.match(r"\s*Size: Stepwise\s+\d+x\d+\s*-\s*(\d+)x(\d+)", line)
+        if m:
+            size = (int(m.group(1)), int(m.group(2)))
+            modes.append({"fourcc": fourcc, "w": size[0], "h": size[1],
+                          "fps": 0.0})
+            continue
+        # Rates are listed under the size they belong to. The first one lands
+        # on the placeholder added above; later ones are separate modes.
+        m = re.search(r"Interval: Discrete [\d.]+s \(([\d.]+) fps\)", line)
+        if not m:
+            m = re.search(r"Interval: Continuous.*?\(([\d.]+)-[\d.]+ fps\)",
+                          line)
+        if m and fourcc and size:
+            fps = round(float(m.group(1)), 3)
+            if modes and modes[-1]["fps"] == 0.0 \
+                    and (modes[-1]["w"], modes[-1]["h"]) == size:
+                modes[-1]["fps"] = fps
+            else:
+                modes.append({"fourcc": fourcc, "w": size[0], "h": size[1],
+                              "fps": fps})
+    return [m for m in modes if m["fourcc"]]
+
+
+def _modes(devnode: str) -> list:
+    if not shutil.which("v4l2-ctl"):
+        return []
+    try:
+        out = subprocess.run(["v4l2-ctl", "-d", devnode, "--list-formats-ext"],
+                             capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return _parse_formats(out.stdout)
+
+
+def mode_label(mode: dict) -> str:
+    if not mode:
+        return "Automatic"
+    rate = f" {mode['fps']:g}Hz" if mode.get("fps") else ""
+    return f"{mode['w']}x{mode['h']}{rate} {mode['fourcc']}"
+
+
+def mode_spec(mode: dict) -> str:
+    return f"{mode['w']}x{mode['h']}@{mode['fps']:g}/{mode['fourcc']}"
+
+
+def parse_mode_spec(spec: str):
+    m = re.match(r"(\d+)x(\d+)@([\d.]+)/(\S+)$", spec or "")
+    if not m:
+        return None
+    return {"w": int(m.group(1)), "h": int(m.group(2)),
+            "fps": float(m.group(3)), "fourcc": m.group(4)}
+
+
+def best_mode(modes: list, max_height: int):
+    """Largest picture that fits, then the highest rate, then the best codec.
+
+    Rate is compared before the encoding on purpose. A dongle that offers both
+    Motion JPEG and raw at 1080p can usually only manage five frames a second
+    raw, and a five-frame-a-second picture is not watchable however clean it is.
+    """
+    usable = [m for m in modes
+              if m["h"] <= max_height
+              and FOURCC_TO_FFMPEG.get(m["fourcc"]) in CODEC_RANK]
+    if not usable:
+        usable = [m for m in modes if FOURCC_TO_FFMPEG.get(m["fourcc"])]
+    if not usable:
+        return None
+    return max(usable, key=lambda m: (
+        m["w"] * m["h"], m["fps"],
+        CODEC_RANK.get(FOURCC_TO_FFMPEG.get(m["fourcc"], ""), 0)))
+
+
+def classify(name: str, product: str, vendor: str, vid: str) -> str:
+    text = " ".join([name, product, vendor])
+    if CAMERA_HINTS.search(text):
+        return "camera"
+    if vid in KNOWN_VENDORS:
+        return "hdmi"
+    if HDMI_HINTS.search(text):
+        return "hdmi"
+    return "unknown"
+
+
+def devices() -> list:
+    """Every video-capture node this machine can actually read from."""
+    have_tool = shutil.which("v4l2-ctl") is not None
+    nodes = sorted((SYS / "class/video4linux").glob("video*"),
+                   key=lambda p: int(re.sub(r"\D", "", p.name) or 0))
+    found = []
+    for node in nodes:
+        devnode = str(DEV / node.name)
+        index = int(_read(node / "index", "0") or 0)
+        modes = _modes(devnode)
+        # A UVC device publishes more than one node: the picture on one and a
+        # metadata stream on the next. The metadata node offers no capture
+        # formats, which is what separates them without guessing from names.
+        if not modes and not (not have_tool and index == 0):
+            continue
+        usb = _usb_device_dir(node)
+        vid = _read(usb / "idVendor") if usb else ""
+        pid = _read(usb / "idProduct") if usb else ""
+        serial = _read(usb / "serial") if usb else ""
+        product = _read(usb / "product") if usb else ""
+        vendor = _read(usb / "manufacturer") if usb else ""
+        name = _read(node / "name") or node.name
+        found.append({
+            "node": node.name,
+            "devnode": devnode,
+            "index": index,
+            "name": name,
+            "product": product,
+            "vendor": vendor or KNOWN_VENDORS.get(vid, ""),
+            "vid": vid,
+            "pid": pid,
+            "serial": serial,
+            "usb": usb.name if usb else "",
+            "card": _alsa_card(usb),
+            "modes": modes,
+            "kind": classify(name, product, vendor, vid),
+        })
+
+    # A key that survives a reboot and a different USB port where it can, and
+    # falls back to the port where it cannot. Serial numbers are what the good
+    # capture cards have and the cheap dongles mostly do not.
+    for d in found:
+        base = f"{d['vid']}-{d['pid']}" if d["vid"] else "v4l"
+        tail = d["serial"] or d["usb"] or d["node"]
+        d["key"] = re.sub(r"[^A-Za-z0-9_.-]+", "_", f"{base}-{tail}")
+    seen = {}
+    for d in found:
+        seen.setdefault(d["key"], []).append(d)
+    for key, group in seen.items():
+        if len(group) > 1:
+            for d in group:
+                d["key"] = f"{key}-n{d['index']}"
+    return found
+
+
+def alsa_cards() -> list:
+    """(index, label) for every sound card, for the audio setting."""
+    out = []
+    for card in sorted((SYS / "class/sound").glob("card*")):
+        m = re.match(r"card(\d+)$", card.name)
+        if not m:
+            continue
+        idx = int(m.group(1))
+        label = _read(card / "id") or card.name
+        out.append((idx, label))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Inputs: devices with their settings applied, plus the ones we remember.
+# ---------------------------------------------------------------------------
+
+
+def device_settings(key: str) -> dict:
+    merged = dict(DEVICE_DEFAULTS)
+    merged.update(read_conf(DEVICE_CONF / f"{key}.conf"))
+    return merged
+
+
+def inputs() -> list:
+    """What the source list shows, in a stable order.
+
+    Devices that are configured but not plugged in are included, the way a
+    television lists every socket on its back panel whether or not anything is
+    in it. Selecting one and finding nothing there is a better answer than the
+    input having silently vanished from the list.
+    """
+    present = devices()
+    known = {d["key"] for d in present}
+    items = []
+    position = 0
+
+    for d in present:
+        cfg = device_settings(d["key"])
+        role = cfg["ROLE"] or ("ignore" if d["kind"] == "camera" else "input")
+        if role == "input":
+            position += 1
+        items.append({**d, "cfg": cfg, "role": role, "present": True,
+                      "label": cfg["NAME"] or (f"HDMI {position}"
+                                               if role == "input"
+                                               else (d["product"] or d["name"]))})
+
+    try:
+        stored = sorted(DEVICE_CONF.glob("*.conf"))
+    except OSError:
+        stored = []
+    for f in stored:
+        key = f.stem
+        if key in known:
+            continue
+        cfg = device_settings(key)
+        if (cfg["ROLE"] or "input") != "input":
+            continue
+        position += 1
+        items.append({"key": key, "cfg": cfg, "role": "input", "present": False,
+                      "label": cfg["NAME"] or f"HDMI {position}",
+                      "devnode": "", "modes": [], "card": -1, "kind": "hdmi",
+                      "name": "", "product": "", "vendor": "", "vid": "",
+                      "pid": "", "serial": "", "usb": "", "node": "",
+                      "index": 0})
+    return items
+
+
+def chosen_mode(item: dict):
+    """The mode this input will actually open with.
+
+    One function rather than one calculation per caller. The source list used
+    to show the best mode the hardware could name, which on a dongle claiming
+    4K meant the tile advertised 2160p and the viewer then opened 1080p,
+    because the cap applies here and did not apply there.
+    """
+    spec = item["cfg"]["MODE"]
+    if spec and spec != "auto":
+        explicit = parse_mode_spec(spec)
+        if explicit:
+            return explicit
+    try:
+        max_h = int(config()["MAX_HEIGHT"])
+    except ValueError:
+        max_h = 1080
+    return best_mode(item["modes"], max_h)
+
+
+def viewer_argv(item: dict) -> list:
+    """Everything the viewer needs, resolved here so it needs no config."""
+    cfg = item["cfg"]
+    glob_cfg = config()
+    mode = chosen_mode(item)
+
+    argv = [VIEWER, "--device", item["devnode"], "--name", item["label"]]
+    if mode:
+        fmt = FOURCC_TO_FFMPEG.get(mode["fourcc"])
+        argv += ["--size", f"{mode['w']}x{mode['h']}"]
+        if fmt:
+            argv += ["--input-format", fmt]
+        if mode.get("fps"):
+            argv += ["--fps", f"{mode['fps']:g}"]
+
+    audio = cfg["AUDIO"]
+    card = item["card"] if audio == "auto" else (
+        -1 if audio == "none" else int(audio) if audio.isdigit() else -1)
+    if card >= 0:
+        argv += ["--audio-card", str(card),
+                 "--audio-latency", glob_cfg["AUDIO_LATENCY_MS"]]
+    argv += ["--aspect", cfg["ASPECT"], "--deinterlace", cfg["DEINTERLACE"]]
+    return argv
+
+
+def say(title: str, text: str) -> None:
+    """Put a message where the viewer will see it.
+
+    A dialog, not a passive popup. Bigscreen's shell never claims the
+    notification bus name, and the file that would let D-Bus start a service to
+    claim it is misnamed in the packaging, so a passive popup is accepted and
+    then displayed by nobody. A dialog draws its own window and is always seen.
+    It also demands dismissing, which is why this is only used for answers to
+    something the viewer just pressed.
+    """
+    if shutil.which("kdialog"):
+        subprocess.Popen(["kdialog", "--title", title, "--sorry", text],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:
+        print(f"{title}: {text}", file=sys.stderr)
+
+
+# ---------------------------------------------------------------------------
+# Commands.
+# ---------------------------------------------------------------------------
+
+
+def cmd_list(_args) -> int:
+    items = inputs()
+    if not items:
+        print("no capture devices found")
+        return 1
+    for d in items:
+        mode = chosen_mode(d) if d["modes"] else None
+        where = d["devnode"] or "not connected"
+        sound = f"card {d['card']}" if d["card"] >= 0 else "no sound"
+        print(f"{d['key']}\t{d['label']}\t{d['role']}\t{where}\t"
+              f"{mode_label(mode)}\t{sound}")
+    return 0
+
+
+def cmd_open(args) -> int:
+    wanted = args.target
+    items = [d for d in inputs() if d["role"] == "input"]
+    if not items:
+        say("Inputs", "No capture device is connected.")
+        return 1
+
+    chosen = None
+    if wanted in (None, "", "-"):
+        chosen = next((d for d in items if d["present"]), None)
+    else:
+        chosen = next((d for d in items if d["key"] == wanted), None)
+        if chosen is None and wanted.isdigit():
+            n = int(wanted)
+            if 1 <= n <= len(items):
+                chosen = items[n - 1]
+        if chosen is None:
+            chosen = next((d for d in items
+                           if d["label"].lower() == wanted.lower()), None)
+    if chosen is None:
+        print(f"no such input: {wanted}", file=sys.stderr)
+        return 2
+    if not chosen["present"]:
+        say(chosen["label"], "Nothing is connected to this input.")
+        return 3
+
+    argv = viewer_argv(chosen)
+    os.execv(argv[0], argv)
+    return 0                                    # not reached
+
+
+def cmd_selftest(_args) -> int:
+    """Prove the display path with no dongle attached.
+
+    Useful on real hardware too: if the test pattern is smooth and the exit key
+    works, anything still wrong is the dongle or the cable, not this.
+    """
+    argv = [VIEWER, "--demo", "--name", "Test pattern"]
+    os.execv(argv[0], argv)
+    return 0
+
+
+def cmd_watch(_args) -> int:
+    """React to a capture device being plugged in.
+
+    By looking at the directory rather than by reading udev's event stream.
+    `udevadm monitor` writes to a pipe, and both it and Python buffer that pipe
+    by the block; events are sparse enough that a plug-in event sat unread for
+    as long as it took something else to produce four kilobytes of output,
+    which in practice was forever. Listing a directory every couple of seconds
+    costs nothing measurable and cannot be buffered away. It also catches a
+    device that appears without an event, which the stream never would.
+    """
+    seen = {p.name for p in (SYS / "class/video4linux").glob("video*")}
+    while True:
+        time.sleep(2.0)
+        try:
+            now = {p.name for p in (SYS / "class/video4linux").glob("video*")}
+        except OSError:
+            continue
+        if now == seen:
+            continue
+        added, seen = now - seen, now
+        if not added:
+            continue
+        # The node appears before the driver has finished with it; asking for
+        # its formats too early gets an empty answer and the device looks
+        # unusable.
+        time.sleep(2.0)
+        for item in inputs():
+            if not item["present"] or item["role"] != "input":
+                continue
+            if item["node"] not in added:
+                continue
+            action = item["cfg"]["ON_CONNECT"]
+            if action == "inherit":
+                action = config()["ON_CONNECT"]
+            if action != "ignore":
+                subprocess.Popen(viewer_argv(item))
+            break
+    return 0
+
+
+def cmd_status(_args) -> int:
+    cfg = config()
+    print(f"on connect:     {cfg['ON_CONNECT']}")
+    print(f"audio delay:    {cfg['AUDIO_LATENCY_MS']} ms")
+    print(f"largest mode:   {cfg['MAX_HEIGHT']}p")
+    print(f"v4l2-ctl:       {'yes' if shutil.which('v4l2-ctl') else 'missing'}")
+    print(f"pactl:          {'yes' if shutil.which('pactl') else 'missing'}")
+    print(f"mpv:            {'yes' if shutil.which('mpv') else 'missing'}")
+    return cmd_list(_args)
+
+
+def main() -> int:
+    import argparse
+    parser = argparse.ArgumentParser(
+        prog="freetvos-hdmi", description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="cmd")
+    sub.add_parser("list").set_defaults(func=cmd_list)
+    sub.add_parser("status").set_defaults(func=cmd_status)
+    sub.add_parser("watch").set_defaults(func=cmd_watch)
+    sub.add_parser("selftest").set_defaults(func=cmd_selftest)
+    p_open = sub.add_parser("open")
+    p_open.add_argument("target", nargs="?")
+    p_open.set_defaults(func=cmd_open)
+
+    # The two on-screen pages live in their own module so this one stays
+    # readable; they are only ever reached from the tile.
+    sys.path.insert(0, "/usr/share/freetvos/hdmi")
+    for name in ("show", "settings"):
+        sub.add_parser(name).set_defaults(func=None, page=name)
+
+    args = parser.parse_args()
+    if args.cmd in ("show", "settings"):
+        import ui
+        return ui.run(args.cmd, sys.modules[__name__])
+    if not args.cmd:
+        parser.print_help()
+        return 2
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

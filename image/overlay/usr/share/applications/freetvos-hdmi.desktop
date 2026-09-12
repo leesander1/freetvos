@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Inputs
+Comment=Watch a console or set-top box through a USB capture device
+Exec=/usr/bin/freetvos-hdmi show
+Icon=freetvos-hdmi
+Categories=AudioVideo;Video;
+Terminal=false
+StartupNotify=true
+X-KDE-FormFactor=tv

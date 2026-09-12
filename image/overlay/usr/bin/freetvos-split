@@ -27,6 +27,7 @@ die() { echo "$*" >&2; exit 1; }
 # its panes the same way, which is how the two halves agree on which pane is
 # first without any channel between them.
 running_apps() {
+  {
   for pid in $(pgrep -f -- "--class=freetvos-" 2>/dev/null || true); do
     # Pull the token out of the command line rather than expecting it on a
     # line of its own. Chromium rewrites its process title, so /proc/PID/cmdline
@@ -41,11 +42,20 @@ running_apps() {
     # The picker is a service window by class but is not a pane. Without this
     # it gets tiled alongside the services, and two pickers left running end up
     # tiled against each other.
-    case "$cls" in --class=freetvos-picker) continue ;; esac
+    case "$cls" in --class=freetvos-picker|--class=freetvos-hdmi-ui) continue ;; esac
     ppid="$(awk '{print $4}' "/proc/$pid/stat" 2>/dev/null || echo 1)"
     grep -qa -- "--class=freetvos-" "/proc/$ppid/cmdline" 2>/dev/null && continue
     echo "${cls#--class=} $pid"
-  done | sort -u -k2,2n
+  done
+  # An external input is an mpv window, not a Chromium one, so it carries no
+  # class to match on. Its control socket is a name this system chose, which
+  # makes it a steadier handle than a window title the player is free to
+  # rewrite.
+  for pid in $(pgrep -f -- "--input-ipc-server=.*freetvos/hdmi-ipc.sock" \
+               2>/dev/null || true); do
+    echo "freetvos-hdmi $pid"
+  done
+  } | sort -u -k2,2n
 }
 
 # Exact, not a substring. pgrep -f matches anywhere in the command line, so
@@ -67,18 +77,27 @@ invoke_shortcut() {
 # so streams cannot be told apart by application name, which is "Chromium" for
 # all of them; they are matched on the owning process id instead.
 route_audio_to() {
-  local want_pid="$1"
+  local want_pid="$1" want_app="${2:-}"
   command -v wpctl >/dev/null 2>&1 || return 0
   local ids
   ids="$(wpctl status 2>/dev/null | sed -n '/Streams:/,/^$/p' \
         | grep -oE '[0-9]+\.' | tr -d '.' || true)"
   [ -n "$ids" ] || return 0
   for id in $ids; do
-    local spid
-    spid="$(wpctl inspect "$id" 2>/dev/null \
+    local info spid is_input=no want=no
+    info="$(wpctl inspect "$id" 2>/dev/null || true)"
+    spid="$(printf '%s\n' "$info" \
            | sed -n 's/.*application\.process\.id = "\([0-9]*\)".*/\1/p' | head -1)"
-    [ -n "$spid" ] || continue
-    if [ "$spid" = "$want_pid" ]; then
+    # An external input's sound is bridged by the audio server itself, so the
+    # stream belongs to no application and has no process id to be matched on.
+    # The bridge is tagged when it is created, and that tag is the handle.
+    printf '%s\n' "$info" | grep -q 'freetvos-hdmi' && is_input=yes
+    if [ "$want_app" = "freetvos-hdmi" ]; then
+      [ "$is_input" = yes ] && want=yes
+    elif [ "$is_input" = no ] && [ -n "$spid" ] && [ "$spid" = "$want_pid" ]; then
+      want=yes
+    fi
+    if [ "$want" = yes ]; then
       wpctl set-mute "$id" 0 >/dev/null 2>&1 || true
     else
       wpctl set-mute "$id" 1 >/dev/null 2>&1 || true
@@ -96,7 +115,8 @@ audio_follow_active() {
   [ "${#panes[@]}" -gt 0 ] || return 0
   index=$(( index % ${#panes[@]} ))
   local pid="${panes[$index]##* }"
-  route_audio_to "$pid"
+  local app="${panes[$index]%% *}"
+  route_audio_to "$pid" "$app"
   echo "$index" > "$STATE_DIR/split-focus"
   echo "sound: ${panes[$index]%% *}"
 }

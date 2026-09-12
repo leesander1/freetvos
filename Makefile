@@ -13,7 +13,7 @@ help:
 	@echo "  make run            boot ./output/qcow2/disk.qcow2 in QEMU"
 	@echo "  make widevine       install the CDM on the running VM (cached)"
 	@echo "  make export         save the image for installing on real hardware"
-	@echo "  make lint           shellcheck and python syntax checks"
+	@echo "  make lint           shellcheck, python syntax, and the input tests"
 	@echo "  make clean          remove build output"
 
 build:
@@ -37,11 +37,28 @@ export:
 	podman save -o output/$(BRAND_ID)-$(ARCH).tar $(IMAGE_REF):$(BRAND_VERSION)-$(ARCH)
 	@ls -lh output/$(BRAND_ID)-$(ARCH).tar
 
+# Sorted by shebang rather than by name or suffix. Half the commands in
+# /usr/bin are Python with no extension, and handing one of those to shellcheck
+# produces nothing but a complaint about the language.
 lint:
-	@python3 -m py_compile cast/dial/freetvos-dial.py \
-	  image/overlay/usr/share/freetvos/generate-desktop-entries.py
-	@command -v shellcheck >/dev/null && shellcheck tools/*.sh webapps/freetvos-webapp \
-	  image/overlay/usr/bin/freetvos-* || echo "shellcheck not installed, skipped"
+	@py=""; sh=""; \
+	for f in tools/*.sh tools/*.py webapps/freetvos-webapp cast/dial/*.py \
+	         image/overlay/usr/bin/freetvos-* \
+	         image/overlay/usr/share/freetvos/*.py \
+	         image/overlay/usr/share/freetvos/hdmi/*.py; do \
+	  case "$$(head -1 "$$f")" in \
+	    *python*) py="$$py $$f" ;; \
+	    *bash*|*/sh) sh="$$sh $$f" ;; \
+	  esac; \
+	done; \
+	for f in $$py; do \
+	  python3 -c 'import sys; compile(open(sys.argv[1]).read(), sys.argv[1], "exec")' \
+	    "$$f" || exit 1; \
+	done; \
+	echo "python syntax ok"; \
+	if command -v shellcheck >/dev/null; then shellcheck $$sh || exit 1; \
+	else echo "shellcheck not installed, skipped"; fi
+	@python3 tools/test-hdmi.py
 	@echo "lint ok"
 
 clean:

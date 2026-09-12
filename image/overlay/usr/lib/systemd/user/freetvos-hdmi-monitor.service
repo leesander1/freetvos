@@ -1,0 +1,17 @@
+[Unit]
+Description=Notice when a USB capture device is plugged in
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+# A user service rather than a system one because it has to put something on
+# screen, and udev can only start system units. Watching the udev event stream
+# from inside the session is shorter than a system service that has to find its
+# way back into the session to say anything.
+Type=simple
+ExecStart=/usr/bin/freetvos-hdmi watch
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

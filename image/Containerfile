@@ -84,6 +84,8 @@ RUN dnf install -y --setopt=install_weak_deps=False \
       mesa-va-drivers \
       libva libva-utils \
       mpv \
+      v4l-utils \
+      pulseaudio-utils \
  && dnf clean all
 
 # ---------------------------------------------------------------------------
@@ -144,6 +146,7 @@ RUN chmod 0755 /usr/bin/freetvos-webapp /usr/bin/freetvos-firstboot \
               /usr/bin/freetvos-settings /usr/bin/freetvos-split \
               /usr/bin/freetvos-combo /usr/bin/freetvos-pick \
               /usr/bin/freetvos-cec \
+              /usr/bin/freetvos-hdmi /usr/bin/freetvos-hdmi-view \
  && python3 /usr/share/freetvos/generate-desktop-entries.py \
  && python3 /usr/share/freetvos/curate-apps.py \
  && python3 /usr/share/freetvos/brand-os-release.py \
@@ -189,6 +192,7 @@ RUN systemctl enable sddm avahi-daemon bluetooth NetworkManager sshd \
  && systemctl enable freetvos-user-groups.service \
 
  && systemctl --global enable freetvos-cec-claim.service \
+ && systemctl --global enable freetvos-hdmi-monitor.service \
  && systemctl enable freetvos-airplay.service freetvos-firstboot.service freetvos-dial.service \
  && systemctl set-default graphical.target \
  && if [ "$BUNDLE_WIDEVINE" != "yes" ]; then \

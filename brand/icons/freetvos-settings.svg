@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect x="16" y="16" width="480" height="480" rx="104" fill="#2A3242"/>
+  <!-- Sliders rather than a cogwheel. A cog at tile size on a television is a
+       grey smudge; three rails and a handle stay legible across the room. -->
+  <g fill="#FFFFFF">
+    <rect x="120" y="160" width="272" height="16" rx="8" opacity="0.45"/>
+    <rect x="120" y="248" width="272" height="16" rx="8" opacity="0.45"/>
+    <rect x="120" y="336" width="272" height="16" rx="8" opacity="0.45"/>
+  </g>
+  <g stroke="#2A3242" stroke-width="14">
+    <circle cx="196" cy="168" r="34" fill="#FFFFFF"/>
+    <circle cx="316" cy="256" r="34" fill="#FFFFFF"/>
+    <circle cx="240" cy="344" r="34" fill="#FFFFFF"/>
+  </g>
+</svg>

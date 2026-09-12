@@ -6,4 +6,4 @@ output/
 *.raw
 *.iso
 .git/
-__pycache__/
+**/__pycache__/

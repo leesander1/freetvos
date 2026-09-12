@@ -40,14 +40,18 @@ decode and modest sources.
 
 ## HDMI inputs alongside apps
 
-Worth knowing: `org.kde.plasma.bigscreen.uvcviewer` is already installed and
-already on the home screen. It displays a UVC video device, so a USB HDMI
-capture stick appears as just another window and would tile in the same grid as
-the apps. That makes "a game console in one pane, a stream in the other"
-achievable without any new video plumbing, which is the expensive part.
+Built; see `docs/HDMI-INPUT.md`. An external input is an ordinary window, so it
+tiles in the same grid as the apps and the sound follows the focused pane like
+any other. A game console in one pane and a stream in the other works today.
 
-Latency is the caveat. USB capture adds enough delay to be noticeable, so this
-suits watching rather than playing.
+This was originally going to be Bigscreen's own `uvcviewer`, which is installed
+and was on the home screen. It shows a capture device and nothing else: no
+format choice, no sound, no settings, and no way back out with a remote. It is
+hidden now, because two tiles for one job where one of them strands you is
+worse than one.
+
+Latency is the caveat and it comes from the dongle, not from here. USB capture
+adds enough delay to be noticeable, so this suits watching rather than playing.
 
 ## How to use it
 

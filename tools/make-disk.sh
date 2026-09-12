@@ -38,8 +38,18 @@ echo ">> Producing $TYPE for $ARCH from $TAG"
 # image it is assembling, so an aarch64 builder handed x86_64 rpms fails with
 # "intended for a different architecture". The builder has to be the same
 # architecture as what it is building.
+#
+# --tmpfs /dev/shm is load-bearing. A privileged container is given the host's
+# shared memory, and podman keeps its lock table in a file there. If anything on
+# the host has ever created that file with a different number of locks, the
+# builder's own podman finds it, refuses to reuse it, and fails at the first
+# step with "failed to open 2048 locks in /libpod_lock: numerical result out of
+# range" -- which reads like a resource limit and is not one. Giving the builder
+# its own empty shared memory means it creates the file itself and the host's
+# copy is neither read nor disturbed.
 podman run --rm --privileged --platform "linux/${ARCH}" \
   --security-opt label=type:unconfined_t \
+  --tmpfs /dev/shm:rw,nosuid,nodev,exec,size=1g \
   -v "$(pwd)/output:/output" \
   -v "$(pwd)/output/config.toml:/config.toml:ro" \
   -v /var/lib/containers/storage:/var/lib/containers/storage \

@@ -1,0 +1,11 @@
+# Let the session read a USB capture device.
+#
+# A capture dongle arrives as an ordinary /dev/videoN. Fedora gives those to
+# root and the video group, which is enough here because the appliance user is
+# in that group, but only once the session exists. uaccess covers the rest: it
+# grants an ACL to whoever is logged in at the seat, which is the right model
+# for a single-seat television and survives the group list changing.
+#
+# The sound side is a separate USB interface and lands under /dev/snd, which
+# systemd's own rules already tag; nothing extra is needed for it.
+KERNEL=="video[0-9]*", SUBSYSTEM=="video4linux", GROUP="video", MODE="0660", TAG+="uaccess"
