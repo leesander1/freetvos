@@ -24,6 +24,7 @@ import socket
 import subprocess
 import threading
 from pathlib import Path
+import urllib.parse
 from urllib.parse import urlparse
 
 # Both trees, user first, so a service added on the device can carry its own
@@ -70,6 +71,18 @@ STYLE = """
            font-weight:600;display:flex;align-items:center;
            justify-content:center}
 
+ /* Posters, for things that have artwork rather than an icon. */
+ .tile.poster{width:212px}
+ .tile.poster img{width:188px;height:282px;border-radius:10px;
+                  object-fit:cover;margin-bottom:12px}
+ .tile.poster .ph{width:188px;height:282px;border-radius:10px;
+                  margin-bottom:12px}
+ /* How far through something is, drawn along the bottom of its poster. */
+ .bar{height:6px;background:#2A3242;border-radius:3px;margin-top:10px}
+ .bar i{display:block;height:6px;background:var(--accent);border-radius:3px}
+ .section{font-size:26px;margin:34px 0 14px;color:var(--dim)}
+ .section:first-of-type{margin-top:0}
+
  /* Rows: a list of settings, one value each. */
  .rows{max-width:1100px}
  .hdr{font-size:28px;margin:38px 0 4px;color:var(--text)}
@@ -86,6 +99,53 @@ STYLE = """
  .row.act .k{flex:0 0 auto;font-size:24px;white-space:nowrap}
  .row input{flex:1;font-size:22px;background:#0B0E14;color:var(--text);
             border:2px solid #2A3242;border-radius:10px;padding:12px 16px}
+"""
+
+
+# Arrow-key movement over whatever is on screen, worked out from where things
+# actually are rather than from a column count. A page with two grids of
+# different tile sizes has no single column count, and guessing one sends the
+# focus sideways off the end of a row into nothing.
+NAV_JS = """
+function tvnav(cells, onChoose, onBack) {
+  let index = 0;
+  function centre(el) {
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }
+  function move(dx, dy) {
+    const from = centre(cells[index]);
+    let best = -1, bestScore = Infinity;
+    cells.forEach((el, i) => {
+      if (i === index) return;
+      const to = centre(el);
+      const ax = (to.x - from.x) * dx, ay = (to.y - from.y) * dy;
+      // Must be in the direction asked for, and mostly in that direction.
+      const along = ax + ay;
+      if (along <= 1) return;
+      const across = Math.abs(dx ? to.y - from.y : to.x - from.x);
+      const score = along + across * 3;
+      if (score < bestScore) { bestScore = score; best = i; }
+    });
+    if (best >= 0) { index = best; render(); }
+  }
+  function render() {
+    cells.forEach((el, i) => el.classList.toggle('sel', i === index));
+    cells[index].scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+  addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight') move(1, 0);
+    else if (e.key === 'ArrowLeft') move(-1, 0);
+    else if (e.key === 'ArrowDown') move(0, 1);
+    else if (e.key === 'ArrowUp') move(0, -1);
+    else if (e.key === 'Enter') onChoose(index);
+    else if (e.key === 'Backspace' && onBack) onBack();
+    else return;
+    e.preventDefault();
+  });
+  render();
+  return { current: () => index };
+}
 """
 
 
@@ -118,7 +178,7 @@ class App:
         self._done = threading.Event()
 
     def get(self, path: str, handler) -> None:
-        """handler() -> html body"""
+        """handler(query) -> html body, where query is a dict of parameters"""
         self._get[path] = handler
 
     def post(self, path: str, handler, finish: bool = False) -> None:
@@ -157,7 +217,9 @@ class App:
                 if handler is None:
                     self._send(404)
                     return
-                self._send(200, page(app.title, handler()).encode())
+                query = dict(urllib.parse.parse_qsl(
+                    urlparse(self.path).query, keep_blank_values=True))
+                self._send(200, page(app.title, handler(query)).encode())
 
             def do_POST(self):
                 path = urlparse(self.path).path

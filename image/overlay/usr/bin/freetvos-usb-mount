@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Mount a USB drive when it is plugged into the television, and let go when it
+# is pulled out.
+#
+# Called from udev. Nothing else on this system would do it: udisks2 is
+# installed but only mounts when a session asks, and a television has no file
+# manager to ask on anyone's behalf.
+#
+# Read-only on purpose. A television reads from a drive and never writes to it,
+# and someone will eventually pull the stick out mid-film; a filesystem that was
+# never mounted for writing cannot be damaged by that.
+set -euo pipefail
+
+ACTION="${1:-}"
+DEVICE="${2:-}"
+ROOT="/run/media/freetvos"
+
+[ -n "$ACTION" ] && [ -n "$DEVICE" ] || exit 0
+[ -b "$DEVICE" ] || exit 0
+
+# A name a person would recognise, falling back through what the drive offers.
+# Sanitised because a label is free text and this becomes a path.
+name() {
+  local label
+  label="$(lsblk -no LABEL "$DEVICE" 2>/dev/null | head -1 || true)"
+  [ -z "$label" ] && label="$(lsblk -no UUID "$DEVICE" 2>/dev/null | head -1 || true)"
+  [ -z "$label" ] && label="$(basename "$DEVICE")"
+  printf '%s' "$label" | tr -c 'A-Za-z0-9._-' '_' | cut -c1-48
+}
+
+fstype() {
+  lsblk -no FSTYPE "$DEVICE" 2>/dev/null | head -1 || true
+}
+
+case "$ACTION" in
+  add)
+    target="$ROOT/$(name)"
+    opts="ro,noatime,nosuid,nodev,noexec"
+    case "$(fstype)" in
+      # These carry no ownership of their own, so it has to be supplied or the
+      # appliance user cannot read what it just mounted.
+      vfat|exfat|ntfs|ntfs3) opts="$opts,uid=1000,gid=1000,umask=0022" ;;
+    esac
+    mkdir -p "$target"
+    # --no-block because udev kills a rule that lingers; --collect so the unit
+    # tidies itself up after the drive is gone rather than sitting failed.
+    systemd-mount --no-block --collect \
+      --options="$opts" \
+      --description="USB drive $(name)" \
+      "$DEVICE" "$target" >/dev/null 2>&1 || true
+    ;;
+  remove)
+    target="$ROOT/$(name)"
+    systemd-mount --umount --no-block "$target" >/dev/null 2>&1 || true
+    rmdir "$target" >/dev/null 2>&1 || true
+    ;;
+esac
+exit 0

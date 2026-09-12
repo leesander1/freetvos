@@ -86,6 +86,9 @@ RUN dnf install -y --setopt=install_weak_deps=False \
       mpv \
       v4l-utils \
       pulseaudio-utils \
+      exfatprogs \
+      ntfs-3g \
+      dosfstools \
  && dnf clean all
 
 # ---------------------------------------------------------------------------
@@ -148,6 +151,8 @@ RUN chmod 0755 /usr/bin/freetvos-webapp /usr/bin/freetvos-firstboot \
               /usr/bin/freetvos-cec \
               /usr/bin/freetvos-hdmi /usr/bin/freetvos-hdmi-view \
               /usr/bin/freetvos-service \
+              /usr/bin/freetvos-media /usr/bin/freetvos-play \
+              /usr/bin/freetvos-usb-mount \
  && python3 /usr/share/freetvos/generate-desktop-entries.py \
  && python3 /usr/share/freetvos/curate-apps.py \
  && python3 /usr/share/freetvos/brand-os-release.py \

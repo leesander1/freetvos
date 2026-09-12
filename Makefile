@@ -60,6 +60,7 @@ lint:
 	else echo "shellcheck not installed, skipped"; fi
 	@python3 tools/test-hdmi.py
 	@python3 tools/test-services.py
+	@python3 tools/test-media.py
 	@echo "lint ok"
 
 clean:

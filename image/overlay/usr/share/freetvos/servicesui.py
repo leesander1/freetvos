@@ -223,9 +223,9 @@ def run(svc) -> int:
                     "group": "", "installed": False, "custom": True})
         return out
 
-    app.get("/", lambda: CATALOGUE_BODY.replace("__ITEMS__",
-                                                json.dumps(items())))
-    app.get("/custom", lambda: CUSTOM_BODY)
+    app.get("/", lambda _q: CATALOGUE_BODY.replace("__ITEMS__",
+                                                   json.dumps(items())))
+    app.get("/custom", lambda _q: CUSTOM_BODY)
 
     def do_add(payload):
         entry = next((c for c in svc.catalog()

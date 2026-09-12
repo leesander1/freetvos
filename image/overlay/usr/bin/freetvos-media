@@ -1,0 +1,468 @@
+#!/usr/bin/env python3
+"""Your own films, programmes and music, wherever they actually live.
+
+Three kinds of place, behind one list:
+
+  a USB drive, mounted when it is plugged in and read straight off
+  a Plex server, signed into by typing a code on your phone
+  a Jellyfin server, the same
+
+  freetvos-media browse          the library, which is what the tile opens
+  freetvos-media sources         what is available, one line each
+  freetvos-media link-plex       sign in, from a terminal
+  freetvos-media link-jellyfin ADDRESS
+  freetvos-media add-folder PATH      anything already mounted elsewhere
+  freetvos-media forget plex|jellyfin
+  freetvos-media resume          what is part way through, everywhere
+
+No password is ever typed into this television. Both servers publish a linking
+flow built for devices like this one, where the code is shown here and entered
+on a device the viewer is already signed into. The tokens that come back are
+theirs, live in their own files, and are the only credentials held.
+"""
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+import uuid
+from pathlib import Path
+
+sys.path.insert(0, "/usr/share/freetvos")
+sys.path.insert(0, "/usr/share/freetvos/media")
+
+import jellyfin                                            # noqa: E402
+import plex                                                # noqa: E402
+
+CONF_HOME = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+STATE_HOME = Path(os.environ.get("XDG_STATE_HOME",
+                                 Path.home() / ".local/state"))
+MEDIA_CONF = Path(os.environ.get("FREETVOS_MEDIA_CONF",
+                                 CONF_HOME / "freetvos/media"))
+WATCH_LATER = STATE_HOME / "freetvos/watch-later"
+USB_ROOT = Path(os.environ.get("FREETVOS_USB_ROOT", "/run/media/freetvos"))
+PLAYER = "/usr/bin/freetvos-play"
+
+PLAYABLE = {
+    ".mkv", ".mp4", ".avi", ".mov", ".m4v", ".webm", ".ts", ".m2ts", ".mpg",
+    ".mpeg", ".wmv", ".flv", ".ogv", ".3gp",
+    ".mp3", ".flac", ".m4a", ".ogg", ".opus", ".wav", ".aac", ".wma",
+}
+# Things that are on every disc and never worth showing.
+NOISE = re.compile(r"^(\.|@eaDir$|System Volume Information$|\$RECYCLE)", re.I)
+
+
+# ---------------------------------------------------------------------------
+# Stored settings. JSON rather than the shell format used elsewhere, because
+# these are nested and are written by machine, not read by hand.
+# ---------------------------------------------------------------------------
+
+
+def _read(name: str) -> dict:
+    try:
+        return json.loads((MEDIA_CONF / f"{name}.json").read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def _write(name: str, data: dict) -> None:
+    MEDIA_CONF.mkdir(parents=True, exist_ok=True)
+    path = MEDIA_CONF / f"{name}.json"
+    path.write_text(json.dumps(data, indent=2) + "\n")
+    # A server token is a credential. Nobody else on this machine needs it, and
+    # the default umask would have handed it to them.
+    path.chmod(0o600)
+
+
+def client_id() -> str:
+    """This device's identity to both servers. Made once and kept.
+
+    A new identifier on every call would appear in the viewer's account as a
+    new device every time the television started, and both servers keep lists
+    of those that people have to tidy by hand.
+    """
+    data = _read("device")
+    if not data.get("id"):
+        data = {"id": str(uuid.uuid4())}
+        _write("device", data)
+    return data["id"]
+
+
+def forget(which: str) -> bool:
+    path = MEDIA_CONF / f"{which}.json"
+    if not path.exists():
+        return False
+    path.unlink()
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Local files.
+# ---------------------------------------------------------------------------
+
+
+def usb_drives() -> list:
+    out = []
+    try:
+        entries = sorted(USB_ROOT.iterdir())
+    except OSError:
+        return out
+    for entry in entries:
+        if not entry.is_dir():
+            continue
+        # A mount point left behind by a drive that has gone is an empty
+        # directory, and offering it leads to an empty screen.
+        if not os.path.ismount(entry) and not any(entry.iterdir()):
+            continue
+        out.append({"kind": "usb", "id": f"usb:{entry.name}",
+                    "name": entry.name.replace("_", " "),
+                    "path": str(entry)})
+    return out
+
+
+def folders() -> list:
+    """Places added by hand, for anything mounted outside this system."""
+    out = []
+    for entry in _read("folders").get("paths", []):
+        path = Path(entry.get("path", ""))
+        if not path.is_dir():
+            continue
+        out.append({"kind": "folder", "id": f"folder:{path}",
+                    "name": entry.get("name") or path.name, "path": str(path)})
+    return out
+
+
+def list_folder(path: str) -> list:
+    """One directory, folders first, in the order a person reads."""
+    try:
+        entries = sorted(Path(path).iterdir(),
+                         key=lambda p: (not p.is_dir(), p.name.lower()))
+    except OSError:
+        return []
+    out = []
+    for entry in entries:
+        if NOISE.match(entry.name):
+            continue
+        if entry.is_dir():
+            out.append({"id": str(entry), "title": entry.name, "kind": "folder",
+                        "playable": False, "path": str(entry)})
+        elif entry.suffix.lower() in PLAYABLE:
+            out.append({"id": str(entry), "title": entry.stem, "kind": "file",
+                        "playable": True, "path": str(entry)})
+    return out
+
+
+def local_resume() -> list:
+    """What mpv remembers being part way through, newest first.
+
+    Read out of mpv's own watch-later files rather than kept separately. One
+    store means the row and the player can never disagree about where
+    something stopped.
+    """
+    out = []
+    try:
+        files = list(WATCH_LATER.iterdir())
+    except OSError:
+        return out
+    for f in files:
+        try:
+            text = f.read_text()
+            when = f.stat().st_mtime
+        except OSError:
+            continue
+        lines = text.splitlines()
+        # mpv writes a file per directory above whatever was played, marked
+        # like this, so that moving a file still finds its position. They are
+        # not things anyone was watching, and the first path inside one is a
+        # directory that does exist, so they have to be refused by the marker.
+        if lines and lines[0].strip() == "# redirect entry":
+            continue
+        path, start = "", 0.0
+        for line in lines:
+            if line.startswith("# ") and not path:
+                path = line[2:].strip()
+            elif line.startswith("start="):
+                try:
+                    start = float(line.split("=", 1)[1])
+                except ValueError:
+                    start = 0.0
+        # Nothing to resume at the very beginning, and a position of zero is
+        # what mpv writes for a file that was opened and closed again.
+        if not path or start <= 1 or not Path(path).exists():
+            continue
+        out.append({"id": path, "title": Path(path).stem, "kind": "file",
+                    "playable": True, "path": path, "offset": int(start),
+                    "duration": 0, "source": "local", "when": when})
+    out.sort(key=lambda item: item["when"], reverse=True)
+    return out[:12]
+
+
+# ---------------------------------------------------------------------------
+# Servers.
+# ---------------------------------------------------------------------------
+
+
+def plex_account() -> dict:
+    return _read("plex")
+
+
+def plex_base() -> tuple:
+    """(address, token) for the best server we can actually reach."""
+    account = plex_account()
+    server = account.get("server") or {}
+    if server.get("base") and server.get("token"):
+        return server["base"], server["token"]
+    return "", ""
+
+
+def plex_connect(refresh: bool = False) -> tuple:
+    """Find a reachable server and remember it, because the search is slow."""
+    account = plex_account()
+    token = account.get("token")
+    if not token:
+        return "", ""
+    if not refresh:
+        base, server_token = plex_base()
+        if base:
+            return base, server_token
+    found = plex.servers(client_id(), token)
+    for server in found:
+        base = plex.reachable(server, client_id())
+        if base:
+            account["server"] = {"base": base, "token": server["token"],
+                                 "name": server["name"]}
+            _write("plex", account)
+            return base, server["token"]
+    return "", ""
+
+
+def jellyfin_account() -> dict:
+    return _read("jellyfin")
+
+
+def sources() -> list:
+    """Everywhere there is something to watch."""
+    out = usb_drives() + folders()
+    account = plex_account()
+    if account.get("token"):
+        out.append({"kind": "plex", "id": "plex",
+                    "name": (account.get("server") or {}).get("name") or "Plex"})
+    account = jellyfin_account()
+    if account.get("token"):
+        out.append({"kind": "jellyfin", "id": "jellyfin",
+                    "name": account.get("name") or "Jellyfin"})
+    return out
+
+
+def resume_everywhere() -> list:
+    """One continue-watching row, from every source that has an opinion."""
+    out = []
+    base, token = plex_base()
+    if base:
+        try:
+            for item in plex.on_deck(base, token, client_id())[:12]:
+                item["source"] = "plex"
+                out.append(item)
+        except plex.PlexError:
+            pass
+    account = jellyfin_account()
+    if account.get("token"):
+        try:
+            for item in jellyfin.resume(account["base"], client_id(),
+                                        account["token"], account["user"])[:12]:
+                item["source"] = "jellyfin"
+                out.append(item)
+        except jellyfin.JellyfinError:
+            pass
+    out.extend(local_resume())
+    return out
+
+
+def play_target(item: dict) -> list:
+    """The player's arguments for one thing, wherever it came from."""
+    argv = [PLAYER]
+    source = item.get("source", "")
+    if source == "plex":
+        base, token = plex_base()
+        argv.append(plex.stream_url(base, token, item["part"]))
+    elif source == "jellyfin":
+        account = jellyfin_account()
+        argv.append(jellyfin.stream_url(account["base"], account["token"],
+                                        item["id"]))
+    else:
+        argv.append(item["path"])
+    argv += ["--title", item.get("title", "")]
+    # A server knows where the viewer stopped across every device they own, and
+    # this one only knows about itself, so the server's answer wins.
+    if source in ("plex", "jellyfin") and item.get("offset"):
+        argv += ["--start", str(item["offset"])]
+    return argv
+
+
+# ---------------------------------------------------------------------------
+# Commands.
+# ---------------------------------------------------------------------------
+
+
+def cmd_sources(_args) -> int:
+    found = sources()
+    if not found:
+        print("nothing connected and no server signed into")
+        return 1
+    for source in found:
+        print(f"{source['id']}\t{source['name']}\t{source['kind']}"
+              f"\t{source.get('path', '')}")
+    return 0
+
+
+def cmd_resume(_args) -> int:
+    items = resume_everywhere()
+    if not items:
+        print("nothing part way through")
+        return 1
+    for item in items:
+        left = ""
+        if item.get("duration"):
+            left = f"\t{item['offset']}s of {item['duration']}s"
+        print(f"{item['source']}\t{item['title']}{left}")
+    return 0
+
+
+def cmd_link_plex(_args) -> int:
+    identity = client_id()
+    pin = plex.request_pin(identity)
+    print(f"Go to https://plex.tv/link and enter:  {pin['code']}")
+    print("Waiting...")
+    token = plex.wait_for_token(identity, pin["id"])
+    if not token:
+        print("no code was entered", file=sys.stderr)
+        return 1
+    _write("plex", {"token": token})
+    base, _ = plex_connect(refresh=True)
+    if not base:
+        print("signed in, but no server answered", file=sys.stderr)
+        return 2
+    print(f"signed in, using {(plex_account().get('server') or {}).get('name')}")
+    return 0
+
+
+def cmd_link_jellyfin(args) -> int:
+    base = jellyfin.normalise_address(args.address)
+    identity = client_id()
+    info = jellyfin.identify(base, identity)
+    print(f"Found {info['name']}")
+    start = jellyfin.quick_connect_start(base, identity)
+    print(f"In Jellyfin on another device, approve the code:  {start['code']}")
+    deadline = time.time() + 300
+    while time.time() < deadline:
+        if jellyfin.quick_connect_check(base, identity, start["secret"]):
+            session = jellyfin.quick_connect_finish(base, identity,
+                                                    start["secret"])
+            _write("jellyfin", {"base": base, "name": info["name"],
+                                "token": session["token"],
+                                "user": session["user"]})
+            print(f"signed in as {session['name']}")
+            return 0
+        time.sleep(2)
+    print("the code was not approved", file=sys.stderr)
+    return 1
+
+
+def cmd_forget(args) -> int:
+    if forget(args.which):
+        print(f"forgot {args.which}")
+        return 0
+    print(f"nothing stored for {args.which}", file=sys.stderr)
+    return 1
+
+
+def cmd_add_folder(args) -> int:
+    """Point the library at a directory this system did not mount itself.
+
+    The way in for a network share. Mounting one needs credentials and root,
+    which is a different problem from browsing it; anything already mounted,
+    by fstab or by hand, becomes a source with this.
+    """
+    path = Path(args.path).expanduser().resolve()
+    if not path.is_dir():
+        print(f"not a directory: {path}", file=sys.stderr)
+        return 2
+    stored = _read("folders")
+    paths = [p for p in stored.get("paths", []) if p.get("path") != str(path)]
+    paths.append({"path": str(path), "name": args.name or path.name})
+    _write("folders", {"paths": paths})
+    print(f"added {path}")
+    return 0
+
+
+def cmd_remove_folder(args) -> int:
+    path = str(Path(args.path).expanduser().resolve())
+    stored = _read("folders")
+    paths = [p for p in stored.get("paths", []) if p.get("path") != path]
+    if len(paths) == len(stored.get("paths", [])):
+        print(f"not a folder in the library: {path}", file=sys.stderr)
+        return 1
+    _write("folders", {"paths": paths})
+    print(f"removed {path}")
+    return 0
+
+
+def cmd_browse(_args) -> int:
+    import mediaui
+    return mediaui.run(sys.modules[__name__])
+
+
+def cmd_play(args) -> int:
+    argv = [PLAYER, args.target]
+    if args.title:
+        argv += ["--title", args.title]
+    return subprocess.call(argv)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        prog="freetvos-media", description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="cmd")
+    sub.add_parser("sources").set_defaults(func=cmd_sources)
+    sub.add_parser("resume").set_defaults(func=cmd_resume)
+    sub.add_parser("browse").set_defaults(func=cmd_browse)
+    sub.add_parser("link-plex").set_defaults(func=cmd_link_plex)
+
+    p_jf = sub.add_parser("link-jellyfin")
+    p_jf.add_argument("address")
+    p_jf.set_defaults(func=cmd_link_jellyfin)
+
+    p_add = sub.add_parser("add-folder")
+    p_add.add_argument("path")
+    p_add.add_argument("--name", default="")
+    p_add.set_defaults(func=cmd_add_folder)
+
+    p_rm = sub.add_parser("remove-folder")
+    p_rm.add_argument("path")
+    p_rm.set_defaults(func=cmd_remove_folder)
+
+    p_forget = sub.add_parser("forget")
+    p_forget.add_argument("which", choices=["plex", "jellyfin"])
+    p_forget.set_defaults(func=cmd_forget)
+
+    p_play = sub.add_parser("play")
+    p_play.add_argument("target")
+    p_play.add_argument("--title", default="")
+    p_play.set_defaults(func=cmd_play)
+
+    args = parser.parse_args()
+    if not args.cmd:
+        parser.print_help()
+        return 2
+    try:
+        return args.func(args)
+    except (plex.PlexError, jellyfin.JellyfinError) as exc:
+        print(exc, file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

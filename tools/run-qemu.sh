@@ -35,6 +35,18 @@ else
   DISPLAY_ARGS=( -display cocoa,show-cursor=on -serial file:output/console.log )
 fi
 
+# USB_IMG=output/usb.img attaches a drive to the emulated USB bus, which is the
+# only way to exercise the automounter: there is no other source of a hotplugged
+# block device in a VM.
+USB_ARGS=()
+if [ -n "${USB_IMG:-}" ]; then
+  [ -f "$USB_IMG" ] || { echo "no USB image at $USB_IMG" >&2; exit 1; }
+  USB_ARGS=(
+    -drive "if=none,id=stick,format=raw,file=$USB_IMG"
+    -device usb-storage,drive=stick,removable=on
+  )
+fi
+
 exec qemu-system-aarch64 \
   -machine virt,accel=hvf,highmem=on \
   -cpu host \
@@ -47,6 +59,7 @@ exec qemu-system-aarch64 \
   -device qemu-xhci \
   -device usb-kbd \
   -device usb-tablet \
+  "${USB_ARGS[@]}" \
   -audiodev coreaudio,id=snd0 \
   -device intel-hda -device hda-duplex,audiodev=snd0 \
   -nic user,model=virtio-net-pci,hostfwd=tcp::2222-:22 \

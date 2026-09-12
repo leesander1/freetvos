@@ -360,9 +360,9 @@ def apply_values(ctl, values) -> None:
 
 def run(page: str, ctl) -> int:
     app = tvui.App("Inputs")
-    app.get("/", lambda: SOURCES_BODY.replace(
+    app.get("/", lambda _q: SOURCES_BODY.replace(
         "__ITEMS__", json.dumps(sources_model(ctl))))
-    app.get("/settings", lambda: SETTINGS_BODY.replace(
+    app.get("/settings", lambda _q: SETTINGS_BODY.replace(
         "__ROWS__", json.dumps(settings_model(ctl))))
 
     def save(payload):

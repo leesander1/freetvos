@@ -1,0 +1,116 @@
+#!/usr/bin/env python3
+"""Play a file, a stream, or anything else mpv understands, on the television.
+
+Separate from the capture viewer next door because the two want opposite
+things. A capture stream has no timestamps worth honouring, nothing to seek and
+nothing to remember, so that one throws away every buffer it can. A film has all
+three, and the single most valuable thing a media player on a television does is
+start again where you left off.
+
+  freetvos-play /run/media/Movies/film.mkv
+  freetvos-play --title "Episode 3" http://server/stream.mkv
+
+Position is remembered by mpv itself, in its watch-later directory, keyed by the
+file. That survives the file moving between a USB stick and a share, and it is
+the same store the continue-watching row reads.
+"""
+import argparse
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+INPUT_CONF = "/usr/share/freetvos/media/input.conf"
+
+STATE = Path(os.environ.get("XDG_STATE_HOME",
+                            Path.home() / ".local/state")) / "freetvos"
+WATCH_LATER = STATE / "watch-later"
+
+
+def build_argv(args) -> list:
+    WATCH_LATER.mkdir(parents=True, exist_ok=True)
+    argv = [
+        "mpv",
+        # No user config and no default bindings, so a stray code from a remote
+        # cannot cycle a setting nobody meant to touch.
+        "--no-config",
+        f"--input-conf={INPUT_CONF}",
+        "--input-default-bindings=no",
+        "--fullscreen=yes",
+        "--force-window=yes",
+        "--keep-open=no",
+        "--cursor-autohide=always",
+        "--title=FreeTVOS Media",
+
+        # Wayland only, with a software output last. Left to itself mpv tries
+        # X11 when its first choice fails, and on a session with no working EGL
+        # that ends in an assertion inside the X11 backend rather than a
+        # fallback: no window appears at all.
+        "--vo=gpu-next,gpu,wlshm",
+        "--gpu-context=wayland",
+        "--hwdec=auto-safe",
+
+        # Start again where you stopped, and write the position often enough
+        # that pulling the power does not lose it.
+        "--save-position-on-quit=yes",
+        f"--watch-later-directory={WATCH_LATER}",
+        "--watch-later-options=start,vid,aid,sid",
+        "--write-filename-in-watch-later-config=yes",
+
+        # Subtitles next to the file, and the language someone asked for.
+        "--sub-auto=fuzzy",
+        "--audio-file-auto=fuzzy",
+        "--sub-font-size=46",
+        "--sub-border-size=3",
+        "--sub-ass-override=scale",
+
+        # Ten feet away, not two.
+        "--osd-font-size=42",
+        "--osd-duration=3000",
+        "--osd-margin-y=60",
+        "--osd-bar-align-y=0.85",
+        "--osd-bar-h=2.5",
+        "--script-opts=osc-visibility=never",
+        "--no-osc",
+    ]
+    if args.title:
+        argv.append(f"--force-media-title={args.title}")
+    if args.subtitle_language:
+        argv.append(f"--slang={args.subtitle_language}")
+    if args.audio_language:
+        argv.append(f"--alang={args.audio_language}")
+    if args.start:
+        # An explicit position beats the remembered one, which is what the
+        # continue-watching row needs when it knows better than mpv does.
+        argv.append(f"--start={args.start}")
+        argv.append("--no-resume-playback")
+    if args.headers:
+        argv.append(f"--http-header-fields={args.headers}")
+    argv.append("--")
+    argv.append(args.target)
+    return argv
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(prog="freetvos-play")
+    parser.add_argument("target")
+    parser.add_argument("--title", default="")
+    parser.add_argument("--start", default="")
+    parser.add_argument("--subtitle-language", default="")
+    parser.add_argument("--audio-language", default="")
+    parser.add_argument("--headers", default="",
+                        help="extra HTTP headers, comma separated")
+    args = parser.parse_args()
+
+    if not args.target:
+        print("nothing to play", file=sys.stderr)
+        return 2
+    try:
+        return subprocess.call(build_argv(args))
+    except OSError as exc:
+        print(f"could not start the player: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

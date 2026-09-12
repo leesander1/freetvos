@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Library
+Comment=Your own films, programmes and music, from a drive or a server
+Exec=/usr/bin/freetvos-media browse
+Icon=freetvos-media
+Categories=AudioVideo;Video;Player;
+Terminal=false
+StartupNotify=true
+X-KDE-FormFactor=tv

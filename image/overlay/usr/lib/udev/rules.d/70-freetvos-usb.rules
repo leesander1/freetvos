@@ -1,0 +1,19 @@
+# Mount a USB drive when it is plugged into the television.
+#
+# udisks2 is installed and would do this, but only when a session asks it to,
+# and a television has no file manager to ask. Partitions only: the whole-disk
+# node of a partitioned drive carries no filesystem and mounting it fails.
+#
+# The helper does the work rather than the rule, because a rule cannot sanitise
+# a filesystem label into a path, and a label is free text that becomes one.
+ACTION=="add", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", \
+  ENV{ID_FS_USAGE}=="filesystem", ENV{DEVTYPE}=="partition", \
+  RUN{program}+="/usr/bin/freetvos-usb-mount add %N"
+
+# An unpartitioned stick, which is how plenty of them are still formatted.
+ACTION=="add", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", \
+  ENV{ID_FS_USAGE}=="filesystem", ENV{DEVTYPE}=="disk", \
+  RUN{program}+="/usr/bin/freetvos-usb-mount add %N"
+
+ACTION=="remove", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", \
+  RUN{program}+="/usr/bin/freetvos-usb-mount remove %N"
