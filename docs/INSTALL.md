@@ -1,19 +1,32 @@
 # Installing on real x86_64 hardware
 
-The container image cross-builds on an Apple Silicon Mac without trouble.
-Turning it into a bootable disk does not: `bootc-image-builder` runs podman
-inside itself, and under emulation that fails with
+The container image cross-builds on an Apple Silicon Mac without trouble. A
+bootable disk does not, and it is worth recording what was tried so nobody
+spends the afternoon again.
 
-```
-Error: failed to open 2048 locks in /libpod_lock: numerical result out of range
-```
+Building a bootc disk means *running* the target image's own userspace to lay
+it out, and qemu-user emulation cannot do the process and namespace work that
+requires. Every route ends in the same place:
 
-for every output type, ISO and raw alike. The disk-assembly step needs a host
-of the target architecture.
+| Route | Fails with |
+|---|---|
+| `bootc-image-builder` as aarch64, `--target-arch amd64` | rpm refuses the x86_64 installer packages as "intended for a different architecture" |
+| `bootc-image-builder` as amd64 | its nested podman cannot allocate 2048 semaphores |
+| ...with `num_locks=128` | crun cannot re-execute itself via a memory file descriptor |
+| ...with `runtime=runc` | runc's nsexec cannot spawn stage-1: invalid argument |
+| `bootc install to-disk --via-loopback` | cannot re-exec into the host mount namespace across architectures |
 
-That is not a problem in practice, because bootc is designed to install from
-the container image directly on the target machine, which skips cross-building
-entirely and is the shorter path anyway.
+Nor is emulating the result useful. QEMU on Apple Silicon offers only TCG for
+x86_64, and no Mac can hardware-accelerate x86 at all, so a Plasma session
+would crawl and would answer nothing about performance, which is the main thing
+hardware is needed to settle. UTM does not change this; it runs the same
+emulation underneath.
+
+A Fedora x86_64 live VM under UTM would work, because inside it everything is
+native and the install proceeds normally. It is hours of emulated work for a
+result that still runs at emulation speed.
+
+Installing on the machine itself takes minutes and is the shorter path anyway.
 
 ## Getting the image onto the machine
 
