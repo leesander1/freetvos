@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect x="16" y="16" width="480" height="480" rx="104" fill="#1DB954"/>
+  <!-- Drawn rather than fetched. open.spotify.com declares only a 32 pixel
+       favicon, and a 32 pixel logo on a tile a viewer sees from three metres
+       is a smudge. -->
+  <g fill="none" stroke="#FFFFFF" stroke-linecap="round">
+    <path d="M132 202 Q256 136 380 202" stroke-width="46"/>
+    <path d="M158 272 Q256 220 354 272" stroke-width="38"/>
+    <path d="M182 338 Q256 296 330 338" stroke-width="30"/>
+  </g>
+</svg>

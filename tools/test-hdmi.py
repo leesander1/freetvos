@@ -282,6 +282,9 @@ def main() -> int:
         check("distinct keys", keys, ["534d-2109-1-1-n0", "534d-2109-1-1-n1"])
 
         print("the settings page and what it writes")
+        # The pages share their machinery with every other surface, so the
+        # parent directory comes along too.
+        sys.path.insert(0, str(REPO / "image/overlay/usr/share/freetvos"))
         sys.path.insert(0, str(REPO / "image/overlay/usr/share/freetvos/hdmi"))
         import ui
         rows = ui.settings_model(hdmi)

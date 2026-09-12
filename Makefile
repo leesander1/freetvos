@@ -59,6 +59,7 @@ lint:
 	if command -v shellcheck >/dev/null; then shellcheck $$sh || exit 1; \
 	else echo "shellcheck not installed, skipped"; fi
 	@python3 tools/test-hdmi.py
+	@python3 tools/test-services.py
 	@echo "lint ok"
 
 clean:

@@ -16,10 +16,20 @@ APP_ID="${1:-}"
 # definition, so a pin inherits that service's profile, user agent and CDM
 # wiring instead of becoming a second, half-configured copy of it.
 URL_OVERRIDE="${2:-}"
-APP_DIR="/usr/share/freetvos/webapps"
+# Two places, the viewer's own first. The services that ship with the product
+# live in the image; anything added on the device with freetvos-service lives in
+# their config directory, because /usr is a read-only image under bootc.
+# Searching the local one first also means a definition there can override a
+# shipped service, which is the only way to follow a provider that moves its
+# address without rebuilding the operating system.
+SYSTEM_APP_DIR="/usr/share/freetvos/webapps"
+USER_APP_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/freetvos/webapps"
 [ -n "$APP_ID" ] || { echo "usage: freetvos-webapp <app-id> [url]" >&2; exit 2; }
-APP_FILE="$APP_DIR/$APP_ID.app"
-[ -r "$APP_FILE" ] || { echo "no such app: $APP_ID" >&2; exit 3; }
+APP_FILE=""
+for dir in "$USER_APP_DIR" "$SYSTEM_APP_DIR"; do
+  if [ -r "$dir/$APP_ID.app" ]; then APP_FILE="$dir/$APP_ID.app"; break; fi
+done
+[ -n "$APP_FILE" ] || { echo "no such app: $APP_ID" >&2; exit 3; }
 
 NAME=""; URL=""; DRM="no"; USER_AGENT=""; SPATIAL_NAV="no"; EXTENSIONS="yes"
 # shellcheck disable=SC1090
@@ -70,6 +80,13 @@ FLAGS=(
 
   "--start-fullscreen"
   "--autoplay-policy=no-user-gesture-required"
+
+  # Let the compositor offer its on-screen keyboard to a focused text field.
+  # Signing into a service is the one thing on this television that needs
+  # typing, and there is no keyboard attached to it. Configured and not
+  # confirmed: the keyboard process runs, but it was never seen to appear over
+  # a Chromium field in the VM.
+  "--enable-wayland-ime"
 
   # One --enable-features only: Chromium honours the last occurrence and
   # silently discards every earlier one, so a second flag would quietly turn

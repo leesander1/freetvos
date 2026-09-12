@@ -9,16 +9,10 @@ Both pages live in one server so moving between them is a navigation rather than
 a second browser launch, which on modest hardware is the difference between
 instant and a two second pause.
 """
-import http.server
 import json
 import os
-import socket
-import subprocess
-import threading
-from pathlib import Path
-from urllib.parse import urlparse
 
-ICONS = Path("/usr/share/icons/hicolor/scalable/apps")
+import tvui
 
 NAME_PRESETS = [
     ("", "Automatic"),
@@ -56,42 +50,13 @@ DEVICE_HEADER = """# Settings for one capture device, keyed by how the device
 # identifies itself. Written by the settings page.
 """
 
-STYLE = """
- :root{--bg:#0B0E14;--surface:#151A23;--accent:#3DDC97;--text:#E6EAF2;
-       --dim:#8C97AB}
- *{box-sizing:border-box}
- [hidden]{display:none!important}
- body{margin:0;background:var(--bg);color:var(--text);
-      font:16px system-ui,-apple-system,"Noto Sans",sans-serif;
-      /* 5% inset keeps everything inside TV title-safe */
-      padding:5vh 5vw}
- h1{font-size:44px;margin:0 0 6px}
- p.step{color:var(--dim);font-size:24px;margin:0 0 40px}
- .hint{margin-top:40px;color:var(--dim);font-size:20px}
-"""
-
-
-def _page(body: str) -> str:
-    return ('<!doctype html><meta charset="utf-8"><title>Inputs</title>'
-            '<style>' + STYLE + '</style>' + body)
-
-
 # ---------------------------------------------------------------------------
 # The source list.
 # ---------------------------------------------------------------------------
 
 SOURCES_BODY = """
 <style>
- .grid{display:flex;flex-wrap:wrap;gap:28px}
- .tile{width:250px;background:var(--surface);border-radius:18px;padding:24px;
-       text-align:center;border:4px solid transparent;transition:border-color 90ms}
- .tile.sel{border-color:var(--accent);box-shadow:0 0 26px rgba(61,220,151,.4)}
- .tile img{width:112px;height:112px;display:block;margin:0 auto 16px}
- .tile.away img{opacity:.35}
- .tile .lbl{font-size:22px}
- .tile .sub{font-size:17px;color:var(--dim);margin-top:8px}
  .empty{font-size:24px;color:var(--dim);max-width:820px;line-height:1.5}
- .msg{margin-top:32px;font-size:22px;color:var(--accent);min-height:28px}
 </style>
 <h1>Inputs</h1>
 <p class="step" id="step">Choose what to watch</p>
@@ -175,22 +140,6 @@ def sources_model(ctl) -> list:
 # ---------------------------------------------------------------------------
 
 SETTINGS_BODY = """
-<style>
- .rows{max-width:1100px}
- .hdr{font-size:28px;margin:38px 0 4px;color:var(--text)}
- .hdr:first-child{margin-top:0}
- .hdr .sub{display:block;font-size:18px;color:var(--dim);margin-top:4px}
- .row{display:flex;align-items:center;gap:24px;background:var(--surface);
-      border-radius:14px;padding:18px 24px;margin-top:12px;
-      border:4px solid transparent;transition:border-color 90ms}
- .row.sel{border-color:var(--accent)}
- .row .k{flex:1;font-size:22px}
- .row .v{font-size:22px;color:var(--accent)}
- .row .arrows{color:var(--dim);font-size:20px;width:44px;text-align:right}
- .row.act{justify-content:center}
- .row.act .k{flex:0;font-size:24px}
- .msg{margin-top:26px;font-size:22px;color:var(--accent);min-height:28px}
-</style>
 <h1>Input settings</h1>
 <p class="step">Up and down to move, left and right to change</p>
 <div class="rows" id="rows"></div>
@@ -410,96 +359,21 @@ def apply_values(ctl, values) -> None:
 
 
 def run(page: str, ctl) -> int:
-    result: dict = {}
-    done = threading.Event()
+    app = tvui.App("Inputs")
+    app.get("/", lambda: SOURCES_BODY.replace(
+        "__ITEMS__", json.dumps(sources_model(ctl))))
+    app.get("/settings", lambda: SETTINGS_BODY.replace(
+        "__ROWS__", json.dumps(settings_model(ctl))))
 
-    class Handler(http.server.BaseHTTPRequestHandler):
-        def log_message(self, *_a):
-            pass
+    def save(payload):
+        apply_values(ctl, payload.get("values") or [])
+        return {"ok": True}
 
-        def _send(self, code, body=b"", ctype="text/html; charset=utf-8"):
-            self.send_response(code)
-            self.send_header("Content-Type", ctype)
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            if body:
-                self.wfile.write(body)
+    app.post("/save", save)
+    # Opening an input ends the page: the process goes on to become the viewer.
+    app.post("/open", lambda payload: {"ok": True}, finish=True)
 
-        def do_GET(self):
-            path = urlparse(self.path).path
-            if path == "/":
-                body = SOURCES_BODY.replace(
-                    "__ITEMS__", json.dumps(sources_model(ctl)))
-                self._send(200, _page(body).encode())
-                return
-            if path == "/settings":
-                body = SETTINGS_BODY.replace(
-                    "__ROWS__", json.dumps(settings_model(ctl)))
-                self._send(200, _page(body).encode())
-                return
-            if path.startswith("/icon/"):
-                # Served from here rather than linked as file://, which a page
-                # loaded over http is not allowed to reach.
-                f = ICONS / Path(path).name
-                if f.suffix == ".svg" and f.exists():
-                    self._send(200, f.read_bytes(), "image/svg+xml")
-                    return
-            self._send(404)
-
-        def do_POST(self):
-            path = urlparse(self.path).path
-            n = int(self.headers.get("Content-Length") or 0)
-            try:
-                payload = json.loads(self.rfile.read(n) or b"{}")
-            except ValueError:
-                payload = {}
-            if path == "/save":
-                apply_values(ctl, payload.get("values") or [])
-                self._send(200, b"ok")
-                return
-            if path == "/open":
-                result.update(payload)
-                self._send(200, b"ok")
-                done.set()
-                return
-            self._send(404)
-
-    sock = socket.socket()
-    sock.bind(("127.0.0.1", 0))
-    port = sock.getsockname()[1]
-    sock.close()
-
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", port), Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-
-    profile = Path(os.environ.get("XDG_DATA_HOME",
-                                  Path.home() / ".local/share")) \
-        / "freetvos/webapps/_inputs"
-    start = "/settings" if page == "settings" else "/"
-    browser = subprocess.Popen([
-        "/usr/bin/chromium-browser",
-        f"--app=http://localhost:{port}{start}",
-        f"--user-data-dir={profile}",
-        # Not freetvos-<service>: split view treats those as panes, and a
-        # settings page tiled alongside a film is not what anyone asked for.
-        "--class=freetvos-hdmi-ui",
-        "--ozone-platform=wayland",
-        "--force-device-scale-factor=1",
-        "--start-fullscreen",
-        "--hide-scrollbars",
-        "--password-store=basic",
-        "--no-first-run",
-    ])
-
-    # Give up rather than hang forever if the window is closed or never appears.
-    done.wait(timeout=900)
-    server.shutdown()
-    browser.terminate()
-    try:
-        browser.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        browser.kill()
-
+    result = app.run(start="/settings" if page == "settings" else "/")
     key = result.get("key")
     if not key:
         return 0

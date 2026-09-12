@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Apps
+Comment=Add or remove services without rebuilding the system
+Exec=/usr/bin/freetvos-service browse
+Icon=freetvos-add
+Categories=Settings;
+Terminal=false
+StartupNotify=true
+X-KDE-FormFactor=tv

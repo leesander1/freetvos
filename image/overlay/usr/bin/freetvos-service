@@ -1,0 +1,477 @@
+#!/usr/bin/env python3
+"""Add and remove services on the device, without rebuilding the image.
+
+The seven services in the image are definitions in /usr, generated into tiles at
+build time, which is right for the ones the product ships with and wrong for
+everything else: wanting Spotify on your own television should not mean building
+an operating system.
+
+A service added here is the same kind of definition written to the viewer's own
+config directory, plus a tile in their applications directory, plus an icon. The
+launcher reads both places and prefers the local one, so adding a service is the
+same mechanism as shipping one, and a local definition can also override a
+shipped service's address if a provider moves it.
+
+  freetvos-service browse           pick from the catalogue, on screen
+  freetvos-service list             what is installed, and where it came from
+  freetvos-service add spotify      add one from the catalogue
+  freetvos-service add --name "My Server" --url https://... [--drm]
+  freetvos-service remove spotify
+
+Nothing is written to /usr, which is a read-only image under bootc: anything
+that did land there would fail outright and be discarded by the next update.
+"""
+import argparse
+import json
+import os
+import re
+import struct
+import subprocess
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+DATA_HOME = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
+CONF_HOME = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+
+SYSTEM_DEFS = Path("/usr/share/freetvos/webapps")
+USER_DEFS = Path(os.environ.get("FREETVOS_WEBAPPS", CONF_HOME / "freetvos/webapps"))
+APPS_DIR = DATA_HOME / "applications"
+ICON_DIR = DATA_HOME / "icons/hicolor"
+CATALOG = Path(os.environ.get("FREETVOS_CATALOG",
+                              "/usr/share/freetvos/service-catalog.json"))
+
+# The same agent the shipped DRM services use. Chrome on ChromeOS is a browser
+# every provider expects to serve, and it asks for no robustness level the
+# sideloaded module cannot supply.
+CROS_AGENT = ("Mozilla/5.0 (X11; CrOS aarch64 15236.80.0) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+FETCH_TIMEOUT = 12
+MAX_ICON_BYTES = 2 * 1024 * 1024
+# A tile is shown at well over a hundred pixels on a television, and the icon a
+# site declares first is usually the 32 pixel one meant for a browser tab.
+# Below this, keep looking.
+MIN_ICON_PX = 96
+MAX_ICON_TRIES = 8
+
+# Icons drawn for this product, which beat anything the site offers. A few
+# services declare nothing above browser-tab size; those are worth drawing once.
+BUNDLED_ICONS = Path("/usr/share/icons/hicolor/scalable/apps")
+
+BRAND_SURFACE = "#2A3242"
+BRAND_ACCENT = "#3DDC97"
+
+
+def slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", text.lower())[:32] or "service"
+
+
+def catalog() -> list:
+    try:
+        data = json.loads(CATALOG.read_text())
+    except (OSError, ValueError):
+        return []
+    out = []
+    for group in data.get("groups", []):
+        for service in group.get("services", []):
+            out.append({**service, "group": group.get("name", ""),
+                        "category": group.get("category",
+                                              "AudioVideo;Video;Player;")})
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Icons.
+#
+# Taken from the service's own site rather than drawn here. Twenty hand-drawn
+# logos would be twenty pieces of someone else's branding to keep up to date,
+# and would do nothing at all for a service the viewer adds by address, which
+# is the whole point of this command.
+# ---------------------------------------------------------------------------
+
+ICON_LINK = re.compile(
+    r"""<link\s[^>]*?rel\s*=\s*["']?([^"'>]*icon[^"'>]*)["']?[^>]*?>""",
+    re.I | re.S)
+HREF = re.compile(r"""href\s*=\s*["']([^"']+)["']""", re.I)
+SIZES = re.compile(r"""sizes\s*=\s*["']?(\d+)x(\d+)""", re.I)
+
+
+def _get(url: str, limit: int = MAX_ICON_BYTES):
+    request = urllib.request.Request(url, headers={"User-Agent": CROS_AGENT})
+    with urllib.request.urlopen(request, timeout=FETCH_TIMEOUT) as response:
+        return response.read(limit), response.headers.get("Content-Type", "")
+
+
+def _icon_candidates(url: str) -> list:
+    """Icons a page declares, largest first, then the conventional fallbacks."""
+    found = []
+    try:
+        body, _ = _get(url, 400_000)
+        html = body.decode("utf-8", "replace")
+    except (urllib.error.URLError, OSError, ValueError):
+        html = ""
+
+    for match in ICON_LINK.finditer(html):
+        tag = match.group(0)
+        rel = match.group(1).lower()
+        href = HREF.search(tag)
+        if not href:
+            continue
+        size = SIZES.search(tag)
+        # An apple-touch-icon is a square meant to be shown large, which is
+        # exactly what a tile wants; a favicon is a 16 pixel afterthought.
+        rank = 400 if "apple-touch" in rel else 0
+        if size:
+            rank = max(rank, int(size.group(1)))
+        elif "svg" in href.group(1).lower():
+            rank = max(rank, 600)
+        found.append((rank, urllib.parse.urljoin(url, href.group(1))))
+
+    # The conventional locations join the ranked list rather than trailing it.
+    # An apple-touch-icon is 180 pixels square by convention, so trying it only
+    # after a declared 32 pixel favicon gets the worse of the two.
+    found.append((500, urllib.parse.urljoin(url, "/favicon.svg")))
+    found.append((350, urllib.parse.urljoin(url, "/apple-touch-icon.png")))
+    found.append((340, urllib.parse.urljoin(url,
+                                            "/apple-touch-icon-precomposed.png")))
+    found.sort(key=lambda pair: pair[0], reverse=True)
+
+    seen, unique = set(), []
+    for _, href in found:
+        if href not in seen:
+            seen.add(href)
+            unique.append(href)
+    return unique[:MAX_ICON_TRIES]
+
+
+def _png_size(data: bytes):
+    if data[:8] == b"\x89PNG\r\n\x1a\n" and data[12:16] == b"IHDR":
+        try:
+            return struct.unpack(">II", data[16:24])
+        except struct.error:
+            return None
+    return None
+
+
+def _size_dir(pixels: int) -> str:
+    for bucket in (512, 256, 128, 64):
+        if pixels >= bucket:
+            return f"{bucket}x{bucket}"
+    return "64x64"
+
+
+# A favicon that is black-on-transparent is common and, on a dark tile, is very
+# nearly invisible. Detected rather than recoloured: rewriting the fills inside
+# somebody else's drawing goes wrong in ways that are hard to see coming, while
+# putting it on a light plate cannot.
+COLOUR_TOKEN = re.compile(
+    r"""(?:fill|stroke)\s*[:=]\s*["']?\s*(?:#(?!000\b|000000\b)[0-9a-f]{3,8}"""
+    r"""|rgb\(|hsl\(|url\(#)""", re.I)
+SVG_OPEN = re.compile(r"<svg\b[^>]*>", re.I | re.S)
+VIEWBOX = re.compile(r"""viewBox\s*=\s*["']([^"']+)["']""", re.I)
+SVG_SIZE = re.compile(r"""\b(width|height)\s*=\s*["']?(\d+(?:\.\d+)?)""", re.I)
+
+
+def plate_dark_svg(data: bytes):
+    """Put a black-on-nothing drawing on a light square, or leave it alone."""
+    try:
+        text = data.decode("utf-8", "replace")
+    except ValueError:
+        return None
+    # No colour information at all counts as black: an SVG path with no fill
+    # attribute renders black, which is how Apple Music's favicon disappeared
+    # against a dark tile while passing a test that looked only for an explicit
+    # black.
+    if COLOUR_TOKEN.search(text):
+        return None
+
+    opening = SVG_OPEN.search(text)
+    if not opening:
+        return None
+    box = VIEWBOX.search(opening.group(0))
+    if box:
+        view = box.group(1)
+    else:
+        dims = dict((m.group(1).lower(), m.group(2))
+                    for m in SVG_SIZE.finditer(opening.group(0)))
+        view = f"0 0 {dims.get('width', '24')} {dims.get('height', '24')}"
+    inner = text[opening.end():]
+    inner = re.sub(r"</svg>\s*$", "", inner, flags=re.I | re.S)
+
+    # A nested <svg> carries its own viewBox, so the scaling is the renderer's
+    # problem rather than arithmetic here.
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" '
+        'width="512" height="512">\n'
+        '  <rect x="16" y="16" width="480" height="480" rx="104" '
+        'fill="#E6EAF2"/>\n'
+        f'  <svg x="96" y="96" width="320" height="320" viewBox="{view}">'
+        f'{inner}</svg>\n</svg>\n').encode()
+
+
+def _kind(data: bytes, ctype: str):
+    """The file type, and how wide it is, for anything worth putting on a tile.
+
+    Windows .ico is skipped rather than converted. It is usually 16 or 32
+    pixels, which on a television is a smudge, and decoding it would mean a
+    raster library the image does not otherwise need.
+    """
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        size = _png_size(data)
+        return "png", min(size) if size else 0
+    if data[:3] == b"\xff\xd8\xff":
+        return "jpg", 0
+    if data[:5] == b"<?xml" or b"<svg" in data[:400].lower() or "svg" in ctype:
+        # Scalable, so its own nominal size does not matter.
+        return "svg", 10_000
+    return None, 0
+
+
+def lettermark(name: str, dest: Path) -> Path:
+    """A tile for a service whose site offered nothing usable."""
+    initial = next((c for c in name.upper() if c.isalnum()), "?")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" '
+        'width="512" height="512">\n'
+        f'  <rect x="16" y="16" width="480" height="480" rx="104" '
+        f'fill="{BRAND_SURFACE}"/>\n'
+        f'  <text x="256" y="256" fill="{BRAND_ACCENT}" font-size="260" '
+        'font-family="system-ui,sans-serif" font-weight="600" '
+        'text-anchor="middle" dominant-baseline="central">'
+        f'{initial}</text>\n'
+        '</svg>\n')
+    return dest
+
+
+def _write_icon(service_id: str, ext: str, pixels: int, data: bytes) -> Path:
+    where = "scalable" if ext == "svg" else _size_dir(pixels)
+    dest = ICON_DIR / where / "apps" / f"freetvos-{service_id}.{ext}"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(data)
+    return dest
+
+
+def acquire_icon(service_id: str, name: str, url: str, offline: bool = False):
+    """The site's own icon if it has a usable one, a lettermark otherwise.
+
+    Measured rather than trusted. A site's `sizes` attribute is a claim about a
+    file, and several of them are wrong; the PNG header is not.
+    """
+    drawn = BUNDLED_ICONS / f"freetvos-{service_id}.svg"
+    if drawn.exists():
+        return drawn
+
+    best = None
+    if not offline:
+        for href in _icon_candidates(url):
+            try:
+                data, ctype = _get(href)
+            except (urllib.error.URLError, OSError, ValueError):
+                continue
+            if not data:
+                continue
+            ext, pixels = _kind(data, ctype)
+            if not ext:
+                continue
+            if ext == "svg":
+                data = plate_dark_svg(data) or data
+            if pixels >= MIN_ICON_PX:
+                return _write_icon(service_id, ext, pixels, data)
+            if best is None or pixels > best[1]:
+                best = (ext, pixels, data)
+
+    if best is not None:
+        # Nothing big enough, but something is better than a letter.
+        return _write_icon(service_id, best[0], best[1], best[2])
+    return lettermark(name,
+                      ICON_DIR / "scalable/apps" / f"freetvos-{service_id}.svg")
+
+
+# ---------------------------------------------------------------------------
+# Installing.
+# ---------------------------------------------------------------------------
+
+
+def installed() -> dict:
+    """Every service the launcher can open, and which tree it came from."""
+    out = {}
+    for source, directory in (("image", SYSTEM_DEFS), ("added", USER_DEFS)):
+        try:
+            files = sorted(directory.glob("*.app"))
+        except OSError:
+            continue
+        for f in files:
+            name = re.search(r'^NAME="([^"]*)"', f.read_text(), re.M)
+            out[f.stem] = {"id": f.stem, "source": source,
+                           "name": name.group(1) if name else f.stem}
+    return out
+
+
+def write_service(service_id: str, name: str, url: str, drm: str,
+                  category: str, icon: Path) -> None:
+    USER_DEFS.mkdir(parents=True, exist_ok=True)
+    agent = CROS_AGENT if drm == "yes" else ""
+    body = [f'NAME="{name}"', f'URL="{url}"',
+            f'ICON="{icon}"', f'CATEGORY="{category}"', f'DRM="{drm}"']
+    if agent:
+        body.append(f'USER_AGENT="{agent}"')
+    body.append('SPATIAL_NAV="yes"')
+    (USER_DEFS / f"{service_id}.app").write_text("\n".join(body) + "\n")
+
+    APPS_DIR.mkdir(parents=True, exist_ok=True)
+    (APPS_DIR / f"freetvos-{service_id}.desktop").write_text(
+        "[Desktop Entry]\n"
+        "Type=Application\n"
+        f"Name={name}\n"
+        f"Comment={name} on FreeTVOS\n"
+        f"Exec=/usr/bin/freetvos-webapp {service_id}\n"
+        f"Icon={icon}\n"
+        f"Categories={category}\n"
+        "Terminal=false\n"
+        "StartupNotify=true\n"
+        "X-KDE-FormFactor=tv\n"
+        f"X-FreeTVOS-WebApp={service_id}\n"
+        f"X-FreeTVOS-DRM={drm}\n"
+    )
+    refresh_tiles()
+
+
+def refresh_tiles() -> None:
+    """Make the home screen notice. Its grid comes from the service cache.
+
+    Missing is not an error. check=False covers a non-zero exit but not a
+    binary that is not there at all, and the service is perfectly addable from
+    a shell with no Plasma session around it.
+    """
+    try:
+        subprocess.run(["kbuildsycoca6"], capture_output=True, check=False)
+    except OSError:
+        pass
+
+
+def add(service_id: str, name: str, url: str, drm: str, category: str,
+        offline: bool = False) -> dict:
+    icon = acquire_icon(service_id, name, url, offline=offline)
+    write_service(service_id, name, url, drm, category, icon)
+    return {"id": service_id, "name": name, "icon": str(icon)}
+
+
+def remove(service_id: str) -> bool:
+    definition = USER_DEFS / f"{service_id}.app"
+    if not definition.exists():
+        return False
+    definition.unlink()
+    (APPS_DIR / f"freetvos-{service_id}.desktop").unlink(missing_ok=True)
+    for size in ("scalable", "256x256"):
+        for ext in ("svg", "png", "jpg"):
+            (ICON_DIR / size / "apps"
+             / f"freetvos-{service_id}.{ext}").unlink(missing_ok=True)
+    # The profile is left alone deliberately. Removing a tile should not throw
+    # away a login someone will want back when they add it again.
+    refresh_tiles()
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Commands.
+# ---------------------------------------------------------------------------
+
+
+def cmd_list(_args) -> int:
+    have = installed()
+    if not have:
+        print("no services")
+        return 1
+    for service in sorted(have.values(), key=lambda s: s["id"]):
+        print(f"{service['id']}\t{service['name']}\t{service['source']}")
+    return 0
+
+
+def cmd_add(args) -> int:
+    if args.service:
+        entry = next((c for c in catalog() if c["id"] == args.service), None)
+        if entry is None:
+            print(f"not in the catalogue: {args.service}", file=sys.stderr)
+            print("list what is available with: freetvos-service catalogue",
+                  file=sys.stderr)
+            return 2
+        name, url = entry["name"], entry["url"]
+        service_id = entry["id"]
+        drm, category = entry.get("drm", "no"), entry["category"]
+    else:
+        if not (args.name and args.url):
+            print("give a catalogue name, or both --name and --url",
+                  file=sys.stderr)
+            return 2
+        name, url = args.name, args.url
+        if not urllib.parse.urlparse(url).scheme:
+            url = "https://" + url
+        service_id = args.id or slug(name)
+        drm = "yes" if args.drm else "no"
+        category = args.category
+
+    result = add(service_id, name, url, drm, category, offline=args.no_icon)
+    print(f"added {result['name']} as {result['id']}")
+    print(f"  icon {result['icon']}")
+    return 0
+
+
+def cmd_remove(args) -> int:
+    if remove(args.service):
+        print(f"removed {args.service}")
+        return 0
+    print(f"not an added service: {args.service}", file=sys.stderr)
+    return 1
+
+
+def cmd_catalogue(_args) -> int:
+    have = installed()
+    for entry in catalog():
+        mark = "installed" if entry["id"] in have else ""
+        print(f"{entry['id']}\t{entry['name']}\t{entry['group']}\t{mark}")
+    return 0
+
+
+def cmd_browse(_args) -> int:
+    sys.path.insert(0, "/usr/share/freetvos")
+    import servicesui
+    return servicesui.run(sys.modules[__name__])
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        prog="freetvos-service", description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="cmd")
+    sub.add_parser("list").set_defaults(func=cmd_list)
+    sub.add_parser("catalogue").set_defaults(func=cmd_catalogue)
+    sub.add_parser("browse").set_defaults(func=cmd_browse)
+
+    p_add = sub.add_parser("add")
+    p_add.add_argument("service", nargs="?")
+    p_add.add_argument("--name")
+    p_add.add_argument("--url")
+    p_add.add_argument("--id")
+    p_add.add_argument("--drm", action="store_true")
+    p_add.add_argument("--category", default="AudioVideo;Video;Player;")
+    p_add.add_argument("--no-icon", action="store_true",
+                       help="skip fetching the site's icon")
+    p_add.set_defaults(func=cmd_add)
+
+    p_rm = sub.add_parser("remove")
+    p_rm.add_argument("service")
+    p_rm.set_defaults(func=cmd_remove)
+
+    args = parser.parse_args()
+    if not args.cmd:
+        parser.print_help()
+        return 2
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

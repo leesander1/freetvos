@@ -1,0 +1,44 @@
+{
+  "comment": [
+    "Services that can be added on the device without rebuilding the image.",
+    "Each becomes a definition in the viewer's own config directory and a tile",
+    "on the home screen; nothing here is installed until someone asks for it.",
+    "drm marks the ones that need the Widevine module, which is only a note to",
+    "the launcher: it decides whether to refuse early with a useful message",
+    "rather than opening a service that will show a black player."
+  ],
+  "groups": [
+    {
+      "name": "Music",
+      "category": "AudioVideo;Audio;Player;",
+      "services": [
+        {"id": "spotify", "name": "Spotify", "url": "https://open.spotify.com/", "drm": "yes"},
+        {"id": "applemusic", "name": "Apple Music", "url": "https://music.apple.com/", "drm": "yes"},
+        {"id": "youtubemusic", "name": "YouTube Music", "url": "https://music.youtube.com/", "drm": "no"},
+        {"id": "tidal", "name": "Tidal", "url": "https://listen.tidal.com/", "drm": "yes"},
+        {"id": "deezer", "name": "Deezer", "url": "https://www.deezer.com/", "drm": "yes"},
+        {"id": "soundcloud", "name": "SoundCloud", "url": "https://soundcloud.com/discover", "drm": "no"},
+        {"id": "bandcamp", "name": "Bandcamp", "url": "https://bandcamp.com/", "drm": "no"},
+        {"id": "radiogarden", "name": "Radio Garden", "url": "https://radio.garden/", "drm": "no"}
+      ]
+    },
+    {
+      "name": "Video",
+      "category": "AudioVideo;Video;Player;",
+      "services": [
+        {"id": "primevideo", "name": "Prime Video", "url": "https://www.primevideo.com/", "drm": "yes"},
+        {"id": "max", "name": "Max", "url": "https://play.max.com/", "drm": "yes"},
+        {"id": "paramountplus", "name": "Paramount+", "url": "https://www.paramountplus.com/", "drm": "yes"},
+        {"id": "peacock", "name": "Peacock", "url": "https://www.peacocktv.com/watch/home", "drm": "yes"},
+        {"id": "crunchyroll", "name": "Crunchyroll", "url": "https://www.crunchyroll.com/", "drm": "yes"},
+        {"id": "tubi", "name": "Tubi", "url": "https://tubitv.com/", "drm": "yes"},
+        {"id": "plutotv", "name": "Pluto TV", "url": "https://pluto.tv/", "drm": "yes"},
+        {"id": "twitch", "name": "Twitch", "url": "https://www.twitch.tv/", "drm": "no"},
+        {"id": "vimeo", "name": "Vimeo", "url": "https://vimeo.com/watch", "drm": "no"},
+        {"id": "iplayer", "name": "BBC iPlayer", "url": "https://www.bbc.co.uk/iplayer", "drm": "yes"},
+        {"id": "itvx", "name": "ITVX", "url": "https://www.itv.com/", "drm": "yes"},
+        {"id": "archive", "name": "Internet Archive", "url": "https://archive.org/details/movies", "drm": "no"}
+      ]
+    }
+  ]
+}

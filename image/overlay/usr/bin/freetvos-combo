@@ -24,16 +24,28 @@ APPS_DIR = DATA_HOME / "applications"
 ICON_DIR = DATA_HOME / "icons/hicolor/scalable/apps"
 SERVICE_ICONS = Path("/usr/share/icons/hicolor/scalable/apps")
 SERVICE_DEFS = Path("/usr/share/freetvos/webapps")
+# Services added on the device, which belong in a pane like any other.
+USER_DEFS = Path(os.environ.get("XDG_CONFIG_HOME",
+                                Path.home() / ".config")) / "freetvos/webapps"
 
 
 def slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
 
 
+def service_file(app: str):
+    """A service definition, the viewer's own copy taking precedence."""
+    for directory in (USER_DEFS, SERVICE_DEFS):
+        f = directory / f"{app}.app"
+        if f.exists():
+            return f
+    return None
+
+
 def service_name(app: str) -> str:
     """The display name from the service definition, for the tile label."""
-    f = SERVICE_DEFS / f"{app}.app"
-    if f.exists():
+    f = service_file(app)
+    if f is not None:
         m = re.search(r'^NAME="([^"]*)"', f.read_text(), re.M)
         if m:
             return m.group(1)
@@ -52,6 +64,10 @@ def compose_icon(apps: list[str], out: Path) -> bool:
     rows = 2 if len(apps) > 2 else 1
     for i, app in enumerate(apps[: cols * rows]):
         src = SERVICE_ICONS / f"freetvos-{app}.svg"
+        if not src.exists():
+            # An added service keeps its icon in the viewer's own tree, and it
+            # may be a raster the site supplied rather than a drawing.
+            src = ICON_DIR / f"freetvos-{app}.svg"
         if not src.exists():
             return False
         body = src.read_text()
@@ -82,7 +98,7 @@ def cmd_add(args: argparse.Namespace) -> int:
         print("a combo needs at least two services", file=sys.stderr)
         return 2
     for app in apps:
-        if not (SERVICE_DEFS / f"{app}.app").exists():
+        if service_file(app) is None:
             print(f"no such service: {app}", file=sys.stderr)
             return 3
 

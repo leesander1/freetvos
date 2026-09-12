@@ -50,7 +50,15 @@ ssh -p 2222 tv@localhost
 | `docs/EXTENSIONS.md` | Browser extensions, and the truth about "force 1080p" |
 | `docs/MULTIVIEW.md` | Split-view design, costs and where it stopped |
 | `docs/HDMI-INPUT.md` | Watching a console through a USB capture device |
+| `docs/SERVICES.md` | Adding and removing apps on the device |
 | `docs/INSTALL.md` | Getting it onto real x86_64 hardware |
+
+## Adding an app
+
+**Apps** on the home screen opens a catalogue of twenty services; Enter adds one
+and Enter again removes it. Anything else goes in by name and web address. A
+service added this way lives entirely in the user's own directories, so it needs
+no rebuild and survives updates. See `docs/SERVICES.md`.
 
 ## Curating the home screen
 

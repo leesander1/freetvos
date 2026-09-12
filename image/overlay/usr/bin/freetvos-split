@@ -42,7 +42,7 @@ running_apps() {
     # The picker is a service window by class but is not a pane. Without this
     # it gets tiled alongside the services, and two pickers left running end up
     # tiled against each other.
-    case "$cls" in --class=freetvos-picker|--class=freetvos-hdmi-ui) continue ;; esac
+    case "$cls" in --class=freetvos-picker|--class=freetvos-ui) continue ;; esac
     ppid="$(awk '{print $4}' "/proc/$pid/stat" 2>/dev/null || echo 1)"
     grep -qa -- "--class=freetvos-" "/proc/$ppid/cmdline" 2>/dev/null && continue
     echo "${cls#--class=} $pid"

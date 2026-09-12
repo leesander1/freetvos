@@ -3,3 +3,14 @@
 # accepted and then ignored.
 [Plugins]
 freetvos-splitEnabled=true
+
+# An on-screen keyboard, because a television has no other one.
+#
+# Not a nicety: signing into a streaming service, joining a hidden wifi network
+# and typing the address of your own media server all need text, and until now
+# the only way to enter any of it was to plug in a USB keyboard. Plasma ships a
+# Wayland input method and both halves are already installed; this is what makes
+# the compositor offer it to a focused text field.
+[Wayland]
+InputMethod=/usr/share/applications/org.kde.plasma.keyboard.desktop
+VirtualKeyboardEnabled=true

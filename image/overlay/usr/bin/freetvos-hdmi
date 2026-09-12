@@ -607,7 +607,9 @@ def main() -> int:
     p_open.set_defaults(func=cmd_open)
 
     # The two on-screen pages live in their own module so this one stays
-    # readable; they are only ever reached from the tile.
+    # readable; they are only ever reached from the tile. The parent directory
+    # comes too, for the shared page machinery every surface here uses.
+    sys.path.insert(0, "/usr/share/freetvos")
     sys.path.insert(0, "/usr/share/freetvos/hdmi")
     for name in ("show", "settings"):
         sub.add_parser(name).set_defaults(func=None, page=name)

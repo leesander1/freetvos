@@ -23,6 +23,9 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 SERVICE_DEFS = Path("/usr/share/freetvos/webapps")
+# Services added on the device, which belong in a pane like any other.
+USER_DEFS = Path(os.environ.get("XDG_CONFIG_HOME",
+                                Path.home() / ".config")) / "freetvos/webapps"
 ICONS = Path("/usr/share/icons/hicolor/scalable/apps")
 
 result: dict = {}
@@ -30,12 +33,22 @@ done = threading.Event()
 
 
 def services() -> list[dict]:
-    out = []
-    for f in sorted(SERVICE_DEFS.glob("*.app")):
-        text = f.read_text()
-        name = re.search(r'^NAME="([^"]*)"', text, re.M)
-        out.append({"id": f.stem, "name": name.group(1) if name else f.stem})
-    return out
+    """Every service the launcher can open, shipped or added on the device.
+
+    Keyed by id with the local copy last, so a definition added here overrides
+    a shipped one of the same name rather than appearing twice.
+    """
+    found = {}
+    for directory in (SERVICE_DEFS, USER_DEFS):
+        try:
+            files = sorted(directory.glob("*.app"))
+        except OSError:
+            continue
+        for f in files:
+            name = re.search(r'^NAME="([^"]*)"', f.read_text(), re.M)
+            found[f.stem] = {"id": f.stem,
+                             "name": name.group(1) if name else f.stem}
+    return [found[k] for k in sorted(found)]
 
 
 PAGE = """<!doctype html><meta charset="utf-8"><title>Split View</title>
