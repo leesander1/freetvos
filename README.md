@@ -53,6 +53,7 @@ ssh -p 2222 tv@localhost
 | `docs/SERVICES.md` | Adding and removing apps on the device |
 | `docs/LIBRARY.md` | Your own media, from a drive or a server |
 | `docs/EXTRAS.md` | Picture, sound, Bluetooth and game streaming |
+| `docs/SCORES.md` | Live scores, and the ESPN feed behind them |
 | `docs/INSTALL.md` | Getting it onto real x86_64 hardware |
 
 ## Adding an app

@@ -83,6 +83,26 @@ STYLE = """
  .section{font-size:26px;margin:34px 0 14px;color:var(--dim)}
  .section:first-of-type{margin-top:0}
 
+ /* Score cards: two teams, a score each, and what is happening. */
+ .card{width:400px;background:var(--surface);border-radius:18px;padding:20px 22px;
+       border:4px solid transparent;transition:border-color 90ms}
+ .card.sel{border-color:var(--accent);box-shadow:0 0 26px rgba(61,220,151,.4)}
+ .card .top{display:flex;align-items:center;gap:10px;font-size:17px;
+            color:var(--dim);margin-bottom:14px}
+ .card .top .star{color:var(--accent)}
+ .card .team{display:flex;align-items:center;gap:12px;padding:7px 0}
+ .card .team img{width:42px;height:42px;object-fit:contain}
+ .card .team .rk{font-size:16px;color:var(--dim);min-width:26px}
+ .card .team .ab{font-size:25px;flex:1}
+ .card .team .rec{font-size:16px;color:var(--dim)}
+ .card .team .sc{font-size:30px;font-weight:600;min-width:60px;text-align:right}
+ .card .team.lost .ab,.card .team.lost .sc{color:var(--dim)}
+ .card .foot{margin-top:14px;font-size:19px;color:var(--dim)}
+ .card.live .foot{color:var(--accent)}
+ .card .sit{font-size:17px;color:var(--dim);margin-top:6px}
+ .card.action{display:flex;align-items:center;justify-content:center;
+              min-height:186px;font-size:24px}
+
  /* Rows: a list of settings, one value each. */
  .rows{max-width:1100px}
  .hdr{font-size:28px;margin:38px 0 4px;color:var(--text)}
@@ -107,8 +127,10 @@ STYLE = """
 # different tile sizes has no single column count, and guessing one sends the
 # focus sideways off the end of a row into nothing.
 NAV_JS = """
-function tvnav(cells, onChoose, onBack) {
-  let index = 0;
+function tvnav(cells, onChoose, onBack, start) {
+  // A starting position, so a page that rebuilds itself on a timer can put the
+  // highlight back where the viewer left it rather than at the top.
+  let index = Math.min(Math.max(start || 0, 0), cells.length - 1);
   function centre(el) {
     const r = el.getBoundingClientRect();
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
@@ -133,7 +155,7 @@ function tvnav(cells, onChoose, onBack) {
     cells.forEach((el, i) => el.classList.toggle('sel', i === index));
     cells[index].scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
-  addEventListener('keydown', e => {
+  const handler = e => {
     if (e.key === 'ArrowRight') move(1, 0);
     else if (e.key === 'ArrowLeft') move(-1, 0);
     else if (e.key === 'ArrowDown') move(0, 1);
@@ -142,9 +164,18 @@ function tvnav(cells, onChoose, onBack) {
     else if (e.key === 'Backspace' && onBack) onBack();
     else return;
     e.preventDefault();
-  });
+  };
+  // Only one keymap at a time. A page that rebuilds itself would otherwise
+  // stack a listener per rebuild, and every arrow press would then be handled
+  // several times over, by handlers pointing at elements no longer on screen.
+  if (window.__tvnavHandler) removeEventListener('keydown', window.__tvnavHandler);
+  window.__tvnavHandler = handler;
+  addEventListener('keydown', handler);
   render();
-  return { current: () => index };
+  return {
+    current: () => index,
+    to: n => { index = Math.min(Math.max(n, 0), cells.length - 1); render(); },
+  };
 }
 """
 

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect x="16" y="16" width="480" height="480" rx="104" fill="#2A3242"/>
+  <!-- A scoreboard rather than a ball: this covers every sport, and any ball
+       drawn here would be the wrong one for most of them. -->
+  <rect x="72" y="128" width="368" height="216" rx="26" fill="#FFFFFF"/>
+  <g fill="#2A3242">
+    <rect x="104" y="164" width="112" height="88" rx="12"/>
+    <rect x="296" y="164" width="112" height="88" rx="12"/>
+    <rect x="248" y="192" width="16" height="16" rx="8"/>
+    <rect x="248" y="228" width="16" height="16" rx="8"/>
+    <rect x="152" y="284" width="208" height="24" rx="12" opacity="0.25"/>
+  </g>
+  <g fill="#3DDC97">
+    <rect x="120" y="180" width="80" height="18" rx="9"/>
+    <rect x="120" y="218" width="80" height="18" rx="9"/>
+    <rect x="312" y="180" width="80" height="18" rx="9"/>
+  </g>
+  <rect x="232" y="344" width="48" height="52" rx="10" fill="#FFFFFF" opacity="0.55"/>
+</svg>

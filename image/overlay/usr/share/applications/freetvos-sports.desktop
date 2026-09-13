@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Scores
+Comment=Live scores from the leagues you follow
+Exec=/usr/bin/freetvos-sports browse
+Icon=freetvos-sports
+Categories=AudioVideo;Video;
+Terminal=false
+StartupNotify=true
+X-KDE-FormFactor=tv

@@ -1,0 +1,235 @@
+#!/usr/bin/env python3
+"""Scores, the way a television should show them.
+
+Every game in the leagues you follow, on one screen, live ones first, with the
+teams you follow pinned above everything else. It refreshes itself while you
+watch, because a score that needs a button press is not a score.
+
+  freetvos-sports browse                    the page, which is what the tile opens
+  freetvos-sports scores [--league nfl]     what is on, one line each
+  freetvos-sports leagues                   what is available and what is followed
+  freetvos-sports follow nfl ncaaf nba
+  freetvos-sports unfollow mlb
+  freetvos-sports teams nfl                 team identifiers, for following one
+  freetvos-sports follow-team nfl 12
+
+The data comes from ESPN's public scoreboard feed. It needs no key and no
+account. It is also undocumented, which is worth knowing: it is what every score
+widget on the internet is built on and has been steady for years, but nobody
+promises it will keep its shape. Apple Sports has no public interface at all.
+"""
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, "/usr/share/freetvos")
+sys.path.insert(0, "/usr/share/freetvos/sports")
+
+import espn                                                # noqa: E402
+
+CONF_HOME = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+SETTINGS = Path(os.environ.get("FREETVOS_SPORTS_CONF",
+                               CONF_HOME / "freetvos/sports.json"))
+
+# What somebody who has not chosen yet almost certainly wants. Followed leagues
+# are a choice; having none at all on first open is not a useful state.
+DEFAULT_LEAGUES = ["nfl", "ncaaf", "nba"]
+
+
+def settings() -> dict:
+    try:
+        stored = json.loads(SETTINGS.read_text())
+    except (OSError, ValueError):
+        stored = {}
+    leagues = [l for l in stored.get("leagues", DEFAULT_LEAGUES)
+               if l in espn.BY_ID]
+    return {"leagues": leagues or DEFAULT_LEAGUES,
+            "teams": stored.get("teams", [])}
+
+
+def save(data: dict) -> None:
+    SETTINGS.parent.mkdir(parents=True, exist_ok=True)
+    SETTINGS.write_text(json.dumps(data, indent=2) + "\n")
+
+
+def followed_team_ids() -> set:
+    return {str(t.get("id")) for t in settings()["teams"] if t.get("id")}
+
+
+def follow_leagues(ids: list, on: bool = True) -> list:
+    current = settings()
+    chosen = [i for i in ids if i in espn.BY_ID]
+    if on:
+        # Kept in the catalogue's own order rather than the order they were
+        # added, so the page reads the same way every time.
+        wanted = set(current["leagues"]) | set(chosen)
+    else:
+        wanted = set(current["leagues"]) - set(chosen)
+    current["leagues"] = [l["id"] for l in espn.LEAGUES if l["id"] in wanted]
+    save(current)
+    return current["leagues"]
+
+
+def follow_team(league: str, team_id: str, on: bool = True) -> list:
+    current = settings()
+    teams = [t for t in current["teams"] if str(t.get("id")) != str(team_id)]
+    if on:
+        name, abbr, logo = "", "", ""
+        for team in espn.teams(league):
+            if team["id"] == str(team_id):
+                name, abbr, logo = team["name"], team["abbr"], team["logo"]
+                break
+        teams.append({"id": str(team_id), "league": league, "name": name,
+                      "abbr": abbr, "logo": logo})
+    current["teams"] = teams
+    save(current)
+    return teams
+
+
+def today(date: str = "") -> dict:
+    """Every game in the followed leagues, in the order worth reading them."""
+    current = settings()
+    fetched = espn.scoreboards(current["leagues"], date)
+    followed = followed_team_ids()
+    games = []
+    for league_id in current["leagues"]:
+        for game in fetched["games"].get(league_id, []):
+            game["followed"] = (game["home"]["id"] in followed
+                                or game["away"]["id"] in followed)
+            games.append(game)
+    games.sort(key=lambda g: espn.sort_key(g, followed))
+    return {"games": games, "errors": fetched["errors"],
+            "leagues": current["leagues"]}
+
+
+# ---------------------------------------------------------------------------
+# Commands.
+# ---------------------------------------------------------------------------
+
+
+def _line(game: dict) -> str:
+    away, home = game["away"], game["home"]
+
+    def side(team):
+        rank = f"#{team['rank']} " if team["rank"] else ""
+        return f"{rank}{team['abbr']}"
+
+    score = (f"{away['score']}-{home['score']}"
+             if game["state"] != "pre" else "")
+    star = "*" if game.get("followed") else " "
+    return (f"{star} {game['league_name'][:18]:18} "
+            f"{side(away):>10} @ {side(home):<10} {score:>8}  "
+            f"{game['detail']}")
+
+
+def cmd_scores(args) -> int:
+    if args.league:
+        if args.league not in espn.BY_ID:
+            print(f"unknown league: {args.league}", file=sys.stderr)
+            return 2
+        games = espn.scoreboard(args.league, args.date)
+        followed = followed_team_ids()
+        for game in games:
+            game["followed"] = (game["home"]["id"] in followed
+                                or game["away"]["id"] in followed)
+        games.sort(key=lambda g: espn.sort_key(g, followed))
+    else:
+        result = today(args.date)
+        games = result["games"]
+        for league_id, message in result["errors"].items():
+            print(f"{league_id}: {message}", file=sys.stderr)
+    if not games:
+        print("nothing on")
+        return 1
+    for game in games:
+        print(_line(game))
+    return 0
+
+
+def cmd_leagues(_args) -> int:
+    following = set(settings()["leagues"])
+    for league in espn.LEAGUES:
+        mark = "*" if league["id"] in following else " "
+        print(f"{mark} {league['id']:7} {league['name']:28} {league['sport']}")
+    return 0
+
+
+def cmd_follow(args) -> int:
+    print(" ".join(follow_leagues(args.leagues, True)))
+    return 0
+
+
+def cmd_unfollow(args) -> int:
+    print(" ".join(follow_leagues(args.leagues, False)))
+    return 0
+
+
+def cmd_teams(args) -> int:
+    found = espn.teams(args.league)
+    if not found:
+        print(f"no teams for {args.league}", file=sys.stderr)
+        return 1
+    following = followed_team_ids()
+    for team in found:
+        mark = "*" if team["id"] in following else " "
+        print(f"{mark} {team['id']:6} {team['abbr']:6} {team['name']}")
+    return 0
+
+
+def cmd_follow_team(args) -> int:
+    teams = follow_team(args.league, args.team, not args.remove)
+    print(f"{len(teams)} team(s) followed")
+    return 0
+
+
+def cmd_browse(_args) -> int:
+    import sportsui
+    return sportsui.run(sys.modules[__name__])
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        prog="freetvos-sports", description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="cmd")
+    sub.add_parser("browse").set_defaults(func=cmd_browse)
+    sub.add_parser("leagues").set_defaults(func=cmd_leagues)
+
+    p_scores = sub.add_parser("scores")
+    p_scores.add_argument("--league", default="")
+    p_scores.add_argument("--date", default="", help="YYYYMMDD")
+    p_scores.set_defaults(func=cmd_scores)
+
+    p_follow = sub.add_parser("follow")
+    p_follow.add_argument("leagues", nargs="+")
+    p_follow.set_defaults(func=cmd_follow)
+
+    p_unfollow = sub.add_parser("unfollow")
+    p_unfollow.add_argument("leagues", nargs="+")
+    p_unfollow.set_defaults(func=cmd_unfollow)
+
+    p_teams = sub.add_parser("teams")
+    p_teams.add_argument("league")
+    p_teams.set_defaults(func=cmd_teams)
+
+    p_team = sub.add_parser("follow-team")
+    p_team.add_argument("league")
+    p_team.add_argument("team")
+    p_team.add_argument("--remove", action="store_true")
+    p_team.set_defaults(func=cmd_follow_team)
+
+    args = parser.parse_args()
+    if not args.cmd:
+        parser.print_help()
+        return 2
+    try:
+        return args.func(args)
+    except espn.EspnError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
