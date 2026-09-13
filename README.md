@@ -8,6 +8,27 @@ twelve streaming services, live scores, split view, external inputs, your own
 media, and a first-run setup wizard. Built for x86_64 but not yet installed on
 real hardware.
 
+![Moving around FreeTVOS with a remote: the home screen, live scores, one game, the app catalogue and external inputs](docs/images/demo.gif)
+
+## What it looks like
+
+Every picture here is the television's own framebuffer, taken through the
+hypervisor while the VM runs, not a mockup. `python3 tools/showcase.py stills`
+and `python3 tools/showcase.py demo` take them again.
+
+| | |
+|---|---|
+| ![The home screen](docs/images/home.png) | ![The first-run wizard](docs/images/setup.png) |
+| **Home.** Twelve streaming services and every feature, on Plasma Bigscreen. | **First run.** Opens by itself the first time the television is turned on. |
+| ![Typing a wifi password on screen](docs/images/setup-keyboard.png) | ![The app catalogue](docs/images/apps.png) |
+| **Typing with a remote.** The page draws its own keyboard. The network names are stand-ins, as the VM has no radio. | **Apps.** Seventeen more services a press away, or any site by its address. |
+| ![Live scores](docs/images/scores.png) | ![One game](docs/images/scores-game.png) |
+| **Scores.** Live games first, refreshing on their own, with the teams you follow above everything. | **A game.** The clock, the down and distance, the last play, and a button to follow either side. |
+| ![Your own media](docs/images/library.png) | ![External inputs](docs/images/inputs.png) |
+| **Library.** A USB drive, a Plex server or a Jellyfin server, and where you left off. | **Inputs.** A console or set-top box through a USB HDMI capture device. |
+| ![Picture and sound settings](docs/images/picture-sound.png) | ![Choosing what goes in split view](docs/images/split-picker.png) |
+| **Picture & Sound.** Resolution, overscan, output, volume and Bluetooth, laid out for a remote. | **Split view.** Two services side by side, with the sound following the one in focus. |
+
 ## Why it is built this way
 
 The entire OS is a `Containerfile`. `podman build` produces it, and
