@@ -107,8 +107,9 @@ APPS_BODY = """
 <p class="step">Pick the ones you use. Enter adds and removes.</p>
 <div class="grid" id="grid"></div>
 <div class="msg" id="msg"></div>
-<p class="hint">Netflix, Disney+, Hulu, Apple TV+, YouTube, YouTube TV and Plex
-are already here. Back goes to the previous step.</p>
+<p class="hint">Netflix, Prime Video, Disney+, Hulu, Apple TV+,
+Paramount+, Peacock, ESPN+, YouTube, YouTube TV, Plex and Jellyfin are already
+here. Back goes to the previous step.</p>
 <script>
 __NAV__
 const ITEMS = __ITEMS__;

@@ -409,9 +409,9 @@ def cmd_remove_folder(args) -> int:
     return 0
 
 
-def cmd_browse(_args) -> int:
+def cmd_browse(args) -> int:
     import mediaui
-    return mediaui.run(sys.modules[__name__])
+    return mediaui.run(sys.modules[__name__], getattr(args, "start", "/"))
 
 
 def cmd_play(args) -> int:
@@ -428,7 +428,10 @@ def main() -> int:
     sub = parser.add_subparsers(dest="cmd")
     sub.add_parser("sources").set_defaults(func=cmd_sources)
     sub.add_parser("resume").set_defaults(func=cmd_resume)
-    sub.add_parser("browse").set_defaults(func=cmd_browse)
+    p_browse = sub.add_parser("browse")
+    p_browse.add_argument("--start", default="/",
+                          help="open on this page, such as /jellyfin-address")
+    p_browse.set_defaults(func=cmd_browse)
     sub.add_parser("link-plex").set_defaults(func=cmd_link_plex)
 
     p_jf = sub.add_parser("link-jellyfin")

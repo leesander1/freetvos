@@ -1,13 +1,13 @@
 # Adding services without rebuilding
 
-The seven services in the image are definitions in `/usr`, turned into tiles at
+The twelve services in the image are definitions in `/usr`, turned into tiles at
 build time. That is right for what the product ships with and wrong for
 everything else: wanting Spotify on your own television should not mean building
 an operating system.
 
-**Apps** on the home screen opens a catalogue of twenty services. Enter adds one,
+**Apps** on the home screen opens a catalogue of seventeen more services. Enter adds one,
 Enter again removes it. There is nothing to type, because typing with a d-pad is
-miserable and most people want one of the same twenty.
+miserable and most people want one of the same few.
 
 For anything else there is **Add by web address**, which takes a name and an
 address and makes a tile out of it. Your own Jellyfin, a webmail client, a
@@ -65,10 +65,24 @@ freetvos-service list
 `--drm` marks a service as needing Widevine, which makes the launcher refuse
 early with a useful message rather than opening a black player.
 
+## Jellyfin
+
+Jellyfin is built in, but it is not a website the way Netflix is. Its web client
+is served by whoever runs the server, so the tile cannot carry a fixed address.
+It opens the server **Library** is signed into. With none yet, it opens Library's
+page asking where the server is, so the tile is never a dead end.
+
+The web client keeps its own sign-in, separate from Library's, and asks once the
+first time it opens. Quick Connect works there too.
+
 ## Typing on a television
 
-Plasma's on-screen keyboard is enabled in the compositor, and the browser is
-told to accept it. This is the part that is configured but unconfirmed: the
-keyboard process runs, and it was never seen to appear over a browser text field
-in the VM. The catalogue needs no typing at all, so this only affects adding by
-address and signing into services.
+Every text field here types through a keyboard the page draws itself: a grid of
+characters walked with the arrow keys. A keyboard plugged into the box still
+types straight through.
+
+Plasma's own on-screen keyboard is not used, because it does not work on this
+shell. It is installed and running, and the compositor reports it as available
+and active over a text field, and it never draws. Adding by address and the
+Jellyfin server address both relied on it until that was found, which meant
+neither could be filled in from a remote at all.

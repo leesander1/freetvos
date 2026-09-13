@@ -38,7 +38,11 @@ def main() -> None:
             "Type=Application",
             f"Name={name}",
             f"Comment={name} on FreeTVOS",
-            f"Exec=/usr/bin/freetvos-webapp {app_id}",
+            # A service can name its own launcher. Jellyfin has no public web
+            # address, so its tile needs a step that finds your server before
+            # the web app can open it.
+            f"Exec={cfg['LAUNCHER']}" if cfg.get("LAUNCHER")
+            else f"Exec=/usr/bin/freetvos-webapp {app_id}",
             f"Icon={cfg.get('ICON', 'freetvos-' + app_id)}",
             f"Categories={cfg.get('CATEGORY', 'AudioVideo;Video;')}",
             "Terminal=false",

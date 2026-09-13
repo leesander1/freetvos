@@ -183,5 +183,6 @@ if [ "$PLATFORM_DIR" = "linux_arm64" ]; then
 fi
 
 echo
-echo "Widevine installed. Netflix, Disney+, Hulu, YouTube TV and Apple TV+"
+echo "Widevine installed. Netflix, Prime Video, Disney+, Hulu, Paramount+,"
+echo "Peacock, ESPN+, YouTube TV and Apple TV+"
 echo "should now start. Playback is limited to 720p on any Linux device."

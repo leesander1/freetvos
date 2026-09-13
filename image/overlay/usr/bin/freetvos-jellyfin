@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+"""Open Jellyfin on the television.
+
+Jellyfin has no website. Its web client is served by whoever runs the server, so
+a tile cannot carry a fixed address the way Netflix's can. This finds the server
+Library is already signed into and opens its web client through the same
+launcher every other service uses. With no server yet, it opens Library on the
+page that asks for one, so the tile is never a dead end.
+
+The web client keeps its own sign-in, separate from Library's. The first time it
+opens it asks once; Quick Connect works there too.
+"""
+import json
+import os
+import sys
+from pathlib import Path
+
+CONF_HOME = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+ACCOUNT = Path(os.environ.get("FREETVOS_MEDIA_CONF",
+                              CONF_HOME / "freetvos/media")) / "jellyfin.json"
+WEBAPP = os.environ.get("FREETVOS_WEBAPP", "/usr/bin/freetvos-webapp")
+MEDIA = os.environ.get("FREETVOS_MEDIA_CMD", "/usr/bin/freetvos-media")
+
+
+def server() -> str:
+    try:
+        base = json.loads(ACCOUNT.read_text()).get("base", "")
+    except (OSError, ValueError, AttributeError):
+        return ""
+    return base.rstrip("/") if isinstance(base, str) else ""
+
+
+def target() -> list:
+    base = server()
+    if base:
+        return [WEBAPP, "jellyfin", f"{base}/web/"]
+    return [MEDIA, "browse", "--start", "/jellyfin-address"]
+
+
+def main() -> int:
+    if "--print" in sys.argv[1:]:
+        print(" ".join(target()))
+        return 0
+    argv = target()
+    os.execv(argv[0], argv)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

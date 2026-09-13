@@ -26,10 +26,7 @@
       "name": "Video",
       "category": "AudioVideo;Video;Player;",
       "services": [
-        {"id": "primevideo", "name": "Prime Video", "url": "https://www.primevideo.com/", "drm": "yes"},
         {"id": "max", "name": "Max", "url": "https://play.max.com/", "drm": "yes"},
-        {"id": "paramountplus", "name": "Paramount+", "url": "https://www.paramountplus.com/", "drm": "yes"},
-        {"id": "peacock", "name": "Peacock", "url": "https://www.peacocktv.com/watch/home", "drm": "yes"},
         {"id": "crunchyroll", "name": "Crunchyroll", "url": "https://www.crunchyroll.com/", "drm": "yes"},
         {"id": "tubi", "name": "Tubi", "url": "https://tubitv.com/", "drm": "yes"},
         {"id": "plutotv", "name": "Pluto TV", "url": "https://pluto.tv/", "drm": "yes"},

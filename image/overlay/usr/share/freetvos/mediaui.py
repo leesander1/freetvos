@@ -165,12 +165,18 @@ ADDRESS_BODY = """
   <div class="row act" id="r1"><div class="k">Connect</div></div>
 </div>
 <div class="msg" id="msg"></div>
-<p class="hint">Up and down to move. Backspace goes back.</p>
+<p class="hint">Enter on the address to type it. Up and down to move.
+Backspace goes back.</p>
 <script>
+__KB__
 let index = 0;
 const rows = [document.getElementById('r0'), document.getElementById('r1')];
 const addr = document.getElementById('addr');
 const msg = document.getElementById('msg');
+// The field is read-only to the browser. Typing goes through the page's own
+// keyboard, which is the only one that appears on a television; a keyboard
+// plugged into the box still types through that too.
+addr.readOnly = true;
 function render() {
   rows.forEach((el, i) => el.classList.toggle('sel', i === index));
   if (index === 0) addr.focus(); else addr.blur();
@@ -190,20 +196,30 @@ function submit() {
     location.href = '/link-jellyfin';
   });
 }
-addEventListener('keydown', e => {
+const pageKeys = e => {
   if (e.key === 'ArrowDown') index = Math.min(1, index + 1);
   else if (e.key === 'ArrowUp') index = Math.max(0, index - 1);
   else if (e.key === 'Enter') {
-    if (index === 1) submit(); else index = 1;
-    e.preventDefault(); render(); return;
-  } else if (e.key === 'Backspace' && index !== 0) { location.href = '/'; }
+    e.preventDefault();
+    if (index === 1) { submit(); return; }
+    tvkeyboard({
+      label: 'Server address',
+      value: addr.value,
+      onDone: v => { addr.value = v.trim(); index = 1; render(); },
+      onCancel: () => render(),
+    });
+    return;
+  } else if (e.key === 'Backspace') { location.href = '/'; }
   else return;
   e.preventDefault();
   render();
-});
+};
+window.__tvnavHandler = pageKeys;
+addEventListener('keydown', pageKeys);
 render();
 </script>
 """
+ADDRESS_BODY = ADDRESS_BODY.replace("__KB__", tvui.KEYBOARD_JS)
 
 
 def _loc(value: str, up: str = "") -> str:
@@ -227,8 +243,11 @@ def _seconds(value: int) -> str:
     return f"{hours}h {minutes:02d}m" if hours else f"{minutes} min"
 
 
-def run(media) -> int:
-    """media is the freetvos-media module, which owns every side effect."""
+def run(media, start: str = "/") -> int:
+    """media is the freetvos-media module, which owns every side effect.
+
+    start opens on a page other than the home one; the Jellyfin tile uses it to
+    land on the server address page when nothing is signed in yet."""
     app = tvui.App("Library")
     pending: dict = {}
     result: dict = {}
@@ -511,7 +530,7 @@ def run(media) -> int:
     app.post("/link-check", do_link_check)
     app.post("/jellyfin-start", do_jellyfin_start)
 
-    app.run()
+    app.run(start=start)
     if result.get("argv"):
         os.execv(result["argv"][0], result["argv"])
     return 0

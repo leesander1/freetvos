@@ -152,6 +152,51 @@ def main() -> int:
         check("a small one is not pretended to be big",
               svc._size_dir(48), "64x64")
 
+        print("the image and the catalogue")
+        import json
+        shipped = sorted(f.stem for f in (REPO / "webapps/apps.d").glob("*.app"))
+        offered = [s["id"] for g in json.loads(CATALOG.read_text())["groups"]
+                   for s in g["services"]]
+        # A service in both would be offered for adding while it is already on
+        # the home screen, and adding it would write a second copy over the
+        # first. Prime Video, Paramount+ and Peacock moved from one to the other.
+        check("nothing is both built in and offered for adding",
+              sorted(set(shipped) & set(offered)), [])
+        check("every built-in service has its own icon",
+              [s for s in shipped
+               if not (REPO / f"brand/icons/freetvos-{s}.svg").exists()], [])
+
+        print("typing on a television")
+        sys.path.insert(0, str(REPO / "image/overlay/usr/share/freetvos"))
+        import servicesui, mediaui
+        # Both fields were only fillable with a keyboard plugged in: focusing
+        # them was meant to raise the system's on-screen keyboard, which never
+        # draws on this shell. A placeholder left unfilled would ship a page
+        # whose Enter key calls a function that does not exist.
+        for label, body in (("add by web address", servicesui.CUSTOM_BODY),
+                            ("jellyfin server address", mediaui.ADDRESS_BODY)):
+            check(f"{label} carries the page's own keyboard",
+                  "function tvkeyboard" in body and "__KB__" not in body, True)
+            check(f"{label} opens it from the field",
+                  "tvkeyboard({" in body, True)
+
+        print("the jellyfin tile")
+        jf_loader = importlib.machinery.SourceFileLoader(
+            "freetvos_jellyfin", str(REPO / "image/overlay/usr/bin/freetvos-jellyfin"))
+        jf_spec = importlib.util.spec_from_loader(jf_loader.name, jf_loader)
+        jf = importlib.util.module_from_spec(jf_spec)
+        jf_loader.exec_module(jf)
+        jf.ACCOUNT = root / "media/jellyfin.json"
+        check("with no server it asks for one, rather than opening nothing",
+              jf.target()[-2:], ["--start", "/jellyfin-address"])
+        jf.ACCOUNT.parent.mkdir(parents=True, exist_ok=True)
+        jf.ACCOUNT.write_text('{"base": "http://jf.local:8096/"}')
+        check("with a server it opens that server's web client",
+              jf.target()[-2:], ["jellyfin", "http://jf.local:8096/web/"])
+        jf.ACCOUNT.write_text("{broken")
+        check("a damaged sign-in file is treated as none",
+              jf.target()[-1], "/jellyfin-address")
+
     print()
     if failures:
         print(f"{len(failures)} check(s) failed")

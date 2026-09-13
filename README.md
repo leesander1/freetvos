@@ -3,9 +3,10 @@
 A television operating system built on KDE Plasma Bigscreen, defined as a
 bootable container and shipped as an atomically updatable image.
 
-Status: boots to the Bigscreen home screen in QEMU on Apple Silicon, launches
-streaming services fullscreen, and receives AirPlay. Not yet ported to real
-hardware, and without artwork.
+Status: boots to a branded Bigscreen home screen in QEMU on Apple Silicon, with
+twelve streaming services, live scores, split view, external inputs, your own
+media, and a first-run setup wizard. Built for x86_64 but not yet installed on
+real hardware.
 
 ## Why it is built this way
 
@@ -124,8 +125,8 @@ it up as a tile.
 
 ## Two constraints worth knowing before you plan around them
 
-**DRM works, and needs no setup.** Netflix, Disney+, Hulu, YouTube TV and Apple
-TV+ all require Widevine, and the module is baked into the image at build time,
+**DRM works, and needs no setup.** Netflix, Prime Video, Disney+, Hulu,
+Paramount+, Peacock, ESPN+, YouTube TV and Apple TV+ all require Widevine, and the module is baked into the image at build time,
 so it is there from first boot with no command to run and no network needed.
 
 That is only appropriate because this image stays on your own machines. The

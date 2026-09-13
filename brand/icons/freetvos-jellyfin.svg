@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="jf" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#AA5CC3"/><stop offset="1" stop-color="#00A4DC"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="104" fill="#101020"/>
+  <!-- An arch with a smaller arch inside it. -->
+  <path d="M256 104c-40 0-196 280-172 318 24 36 320 36 344 0 24-38-132-318-172-318zm0 104c22 0 98 140 86 162-12 20-160 20-172 0-12-22 64-162 86-162z" fill="url(#jf)"/>
+  <path d="M256 272c-10 0-40 62-34 72 6 10 62 10 68 0 6-10-24-72-34-72z" fill="url(#jf)"/>
+</svg>

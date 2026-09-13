@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect x="16" y="16" width="480" height="480" rx="104" fill="#000000"/>
+  <!-- Six feathers of colour over a white P. -->
+  <g>
+    <circle cx="356" cy="136" r="22" fill="#FCB711"/><circle cx="356" cy="200" r="22" fill="#F37021"/>
+    <circle cx="356" cy="264" r="22" fill="#CC004C"/><circle cx="356" cy="328" r="22" fill="#6460AA"/>
+    <circle cx="356" cy="392" r="22" fill="#0089D0"/><circle cx="412" cy="264" r="22" fill="#0DB14B"/>
+  </g>
+  <path d="M130 120h84c52 0 88 34 88 82s-36 82-88 82h-30v108h-54zm54 50v64h28c20 0 34-12 34-32s-14-32-34-32z" fill="#FFFFFF"/>
+</svg>

@@ -8,8 +8,9 @@ Two steps and a way out of each:
 
 1. **Network.** A cable is detected and says so. Otherwise the networks in range
    are listed strongest first, with the password typed on screen.
-2. **Apps.** The catalogue of twenty services, ticked on and off. Netflix,
-   Disney+, Hulu, Apple TV+, YouTube, YouTube TV and Plex are already there.
+2. **Apps.** The catalogue of seventeen more services, ticked on and off.
+   Netflix, Prime Video, Disney+, Hulu, Apple TV+, Paramount+, Peacock, ESPN+,
+   YouTube, YouTube TV, Plex and Jellyfin are already there.
 
 Nothing is compulsory. **Skip for now** goes straight to watching, and **Setup**
 on the home screen runs it again whenever you want.

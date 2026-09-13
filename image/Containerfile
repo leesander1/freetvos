@@ -155,7 +155,7 @@ RUN chmod 0755 /usr/bin/freetvos-webapp /usr/bin/freetvos-firstboot \
               /usr/bin/freetvos-media /usr/bin/freetvos-play \
               /usr/bin/freetvos-usb-mount /usr/bin/freetvos-tune \
               /usr/bin/freetvos-moonlight /usr/bin/freetvos-sports \
-              /usr/bin/freetvos-setup \
+              /usr/bin/freetvos-setup /usr/bin/freetvos-jellyfin \
  && python3 /usr/share/freetvos/generate-desktop-entries.py \
  && python3 /usr/share/freetvos/curate-apps.py \
  && python3 /usr/share/freetvos/brand-os-release.py \

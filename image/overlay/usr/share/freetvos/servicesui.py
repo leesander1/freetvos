@@ -149,23 +149,34 @@ CUSTOM_BODY = """
   <div class="row act" id="r3"><div class="k">Add it</div></div>
 </div>
 <div class="msg" id="msg"></div>
-<p class="hint">Up and down to move. The keyboard appears when a field is
-selected. Back returns to the list.</p>
+<p class="hint">Enter on a field to type in it. Up and down to move. Back
+returns to the list.</p>
 <script>
+__KB__
 let index = 0;
 let drm = false;
 const rows = [0, 1, 2, 3].map(i => document.getElementById('r' + i));
 const name = document.getElementById('name');
 const url = document.getElementById('url');
 const msg = document.getElementById('msg');
+// Read-only to the browser. Focusing a field was meant to raise the system's
+// keyboard, which never draws on this shell, so the fields could not be filled
+// from a remote at all. Typing goes through the page's own keyboard instead.
+name.readOnly = true;
+url.readOnly = true;
 
 function render() {
   rows.forEach((el, i) => el.classList.toggle('sel', i === index));
   document.getElementById('drmv').textContent = drm ? 'Yes' : 'No';
-  // Focus the field itself, which is what raises the on-screen keyboard.
-  if (index === 0) name.focus();
-  else if (index === 1) url.focus();
-  else { name.blur(); url.blur(); }
+}
+
+function type(field, label) {
+  tvkeyboard({
+    label: label,
+    value: field.value,
+    onDone: v => { field.value = v.trim(); index = Math.min(3, index + 1); render(); },
+    onCancel: () => render(),
+  });
 }
 
 function submit() {
@@ -191,23 +202,31 @@ function submit() {
   });
 }
 
-addEventListener('keydown', e => {
+const pageKeys = e => {
   if (e.key === 'ArrowDown') index = Math.min(3, index + 1);
   else if (e.key === 'ArrowUp') index = Math.max(0, index - 1);
   else if (e.key === 'ArrowLeft' && index === 2) drm = !drm;
   else if (e.key === 'ArrowRight' && index === 2) drm = !drm;
   else if (e.key === 'Enter') {
-    if (index === 3) { submit(); }
-    else if (index === 2) { drm = !drm; }
-    else { index = Math.min(3, index + 1); }
-    e.preventDefault(); render(); return;
-  } else return;
+    e.preventDefault();
+    if (index === 3) { submit(); return; }
+    if (index === 2) { drm = !drm; render(); return; }
+    if (index === 0) { type(name, 'Name'); return; }
+    type(url, 'Web address');
+    return;
+  } else if (e.key === 'Backspace') { location.href = '/'; }
+  else return;
   e.preventDefault();
   render();
-});
+};
+// Registered under the name the keyboard looks for, so it is set aside while
+// the keyboard is open and handed back when it closes.
+window.__tvnavHandler = pageKeys;
+addEventListener('keydown', pageKeys);
 render();
 </script>
 """
+CUSTOM_BODY = CUSTOM_BODY.replace("__KB__", tvui.KEYBOARD_JS)
 
 
 def run(svc) -> int:
