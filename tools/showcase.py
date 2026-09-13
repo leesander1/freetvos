@@ -7,7 +7,8 @@ frames come from the hypervisor's framebuffer. Nothing is staged in a browser on
 the host, so every picture is what the television actually draws.
 
   python3 tools/showcase.py stills     one screenshot per feature
-  python3 tools/showcase.py demo       a GIF of moving around the interface
+  python3 tools/showcase.py demo       a GIF of moving around the interface,
+                                       ending on two services in split view
 
 Needs the VM running (make run) and ffmpeg on the host. Output goes to
 docs/images, scaled to 1280 wide: large enough to read, small enough that the
@@ -102,6 +103,19 @@ def vm(command: str) -> None:
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def vm_ok(command: str) -> bool:
+    return subprocess.run([str(REPO / "tools/vmssh.sh"), command],
+                          stdout=subprocess.DEVNULL,
+                          stderr=subprocess.DEVNULL).returncode == 0
+
+
+def chord(*names: str) -> None:
+    """Keys held together, such as the split view's next-pane shortcut."""
+    qmp([{"execute": "send-key",
+          "arguments": {"keys": [{"type": "qcode", "data": n} for n in names]}}])
+    time.sleep(0.4)
+
+
 def close_everything() -> None:
     """Back to the home screen, with nothing of ours left open."""
     # The bracket keeps each pattern from matching the command running it:
@@ -113,9 +127,19 @@ def close_everything() -> None:
     time.sleep(4)
 
 
-def open_surface(command: str, wait: int, unit: str) -> None:
+def open_surface(command: str, wait: int, unit: str,
+                 keep: bool = False) -> None:
+    """Start something in the viewer's session.
+
+    keep leaves alone whatever the command starts. A transient job stops every
+    process it launched once its own command exits, and split view's command
+    exits as soon as the panes are tiled, so the first recording filmed two
+    browsers being killed a few seconds after they opened. A tile launched
+    from the home screen gets its own scope and has no such problem.
+    """
+    kill = "-p KillMode=process " if keep else ""
     vm(f"systemd-run --user --machine=tv@ --quiet --collect --unit={unit} "
-       f"{command}")
+       f"{kill}{command}")
     time.sleep(wait)
 
 
@@ -194,6 +218,37 @@ def demo() -> int:
         close_everything()
         open_surface("/usr/bin/freetvos-hdmi show", 14, "demo3")
         hold(2.0)                                   # external inputs
+        close_everything()
+
+        # Split view from the tile: pick a service for each pane, open both.
+        # The picker lists services alphabetically, six to a row, so YouTube
+        # is one row down and four along, and ESPN+ is two along. Neither
+        # needs an account to show something worth looking at.
+        # Through the tile itself, the way pressing Split View does it.
+        open_surface("/usr/bin/kioclient exec "
+                     "/usr/share/applications/freetvos-split.desktop",
+                     16, "demo4", keep=True)
+        hold(1.5)                                   # choose the left pane
+        keys("down", "right", "right", "right", "right", gap=0.45)
+        hold(1.0)
+        keys("ret")
+        hold(1.0)                                   # choose the right pane
+        keys("right", "right", gap=0.45)
+        hold(1.0)
+        keys("ret")
+        hold(1.2)                                   # ready: Open is selected
+        keys("ret")
+        # Not filmed: two browsers starting from cold. Wait until both panes
+        # exist, then give the pages time to draw before holding on them.
+        both = ("test \"$(runuser -u tv -- env XDG_RUNTIME_DIR=/run/user/1000 "
+                "/usr/bin/freetvos-split list | wc -l)\" -ge 2")
+        deadline = time.time() + 90
+        while time.time() < deadline and not vm_ok(both):
+            time.sleep(3)
+        time.sleep(18)
+        hold(3.0)                                   # YouTube beside ESPN+
+        chord("ctrl", "alt", "tab")
+        hold(2.5)                                   # the highlight moves over
         close_everything()
         hold(1.5)
 

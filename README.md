@@ -8,7 +8,7 @@ twelve streaming services, live scores, split view, external inputs, your own
 media, and a first-run setup wizard. Built for x86_64 but not yet installed on
 real hardware.
 
-![Moving around FreeTVOS with a remote: the home screen, live scores, one game, the app catalogue and external inputs](docs/images/demo.gif)
+![Moving around FreeTVOS with a remote: the home screen, live scores, one game, the app catalogue, external inputs, and YouTube beside ESPN+ in split view](docs/images/demo.gif)
 
 ## What it looks like
 
