@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect x="16" y="16" width="480" height="480" rx="104" fill="#2A3242"/>
+  <!-- A list with things ticked off it, which is what setup is. -->
+  <g fill="#FFFFFF">
+    <rect x="216" y="140" width="184" height="24" rx="12"/>
+    <rect x="216" y="244" width="184" height="24" rx="12"/>
+    <rect x="216" y="348" width="184" height="24" rx="12" opacity="0.4"/>
+  </g>
+  <g fill="none" stroke="#3DDC97" stroke-width="26" stroke-linecap="round"
+     stroke-linejoin="round">
+    <path d="M112 152 l28 28 l48 -56"/>
+    <path d="M112 256 l28 28 l48 -56"/>
+  </g>
+  <circle cx="146" cy="360" r="26" fill="none" stroke="#FFFFFF"
+          stroke-width="18" opacity="0.4"/>
+</svg>

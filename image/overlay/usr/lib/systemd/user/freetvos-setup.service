@@ -1,0 +1,18 @@
+[Unit]
+Description=Set the television up the first time it is turned on
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+# Delayed because the shell has to be drawing before anything opens on top of
+# it; a window that maps into a session still starting up lands behind it.
+#
+# --once does nothing at all if setup has already been done, so this unit is
+# harmless on every boot after the first.
+Type=oneshot
+ExecStartPre=/usr/bin/sleep 12
+ExecStart=/usr/bin/freetvos-setup run --once
+RemainAfterExit=no
+
+[Install]
+WantedBy=graphical-session.target

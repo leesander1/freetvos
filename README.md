@@ -54,7 +54,14 @@ ssh -p 2222 tv@localhost
 | `docs/LIBRARY.md` | Your own media, from a drive or a server |
 | `docs/EXTRAS.md` | Picture, sound, Bluetooth and game streaming |
 | `docs/SCORES.md` | Live scores, and the ESPN feed behind them |
+| `docs/SETUP.md` | The first-run wizard, and typing on a television |
 | `docs/INSTALL.md` | Getting it onto real x86_64 hardware |
+
+## First run
+
+The first time it is turned on it opens a wizard: join a network, then pick the
+apps you use. Both are skippable and **Setup** on the home screen runs it again.
+See `docs/SETUP.md`.
 
 ## Adding an app
 

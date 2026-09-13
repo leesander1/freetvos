@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Setup
+Comment=Join a network and choose the apps you use
+Exec=/usr/bin/freetvos-setup run
+Icon=freetvos-setup
+Categories=Settings;
+Terminal=false
+StartupNotify=true
+X-KDE-FormFactor=tv

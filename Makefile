@@ -63,6 +63,7 @@ lint:
 	@python3 tools/test-media.py
 	@python3 tools/test-tune.py
 	@python3 tools/test-sports.py
+	@python3 tools/test-setup.py
 	@echo "lint ok"
 
 clean:

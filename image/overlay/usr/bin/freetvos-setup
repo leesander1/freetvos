@@ -1,0 +1,287 @@
+#!/usr/bin/env python3
+"""First-run setup: get on the network, and put the apps you use on the screen.
+
+Runs once, by itself, the first time somebody turns the television on. Until
+now it booted to a grid with no network joined and nobody signed in, and the
+only way to join a wifi network was Plasma's own dialogs, which assume a mouse.
+
+  freetvos-setup run        the wizard, which is what runs at first boot
+  freetvos-setup status     whether it has been done, and what the network is
+  freetvos-setup networks   what wifi is in range
+  freetvos-setup reset      let it run again
+
+Networking goes through nmcli rather than through NetworkManager's own library:
+it is the supported interface, it is already installed, and it cannot drift from
+what the rest of the system believes about the connection.
+"""
+import argparse
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+STATE = Path(os.environ.get("XDG_STATE_HOME",
+                            Path.home() / ".local/state")) / "freetvos"
+STAMP = Path(os.environ.get("FREETVOS_SETUP_STAMP", STATE / "setup-done"))
+NMCLI = os.environ.get("FREETVOS_NMCLI", "nmcli")
+
+SCAN_TIMEOUT = 25
+CONNECT_TIMEOUT = 70
+
+
+def _run(args: list, timeout: int = 20):
+    try:
+        return subprocess.run([NMCLI] + args, capture_output=True, text=True,
+                              timeout=timeout)
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _split(line: str) -> list:
+    """Undo nmcli's terse escaping.
+
+    Fields are separated by colons and a colon inside a field is written \\:,
+    which a plain split would tear in half. Network names contain colons more
+    often than you would think.
+    """
+    out, current, escaped = [], "", False
+    for char in line:
+        if escaped:
+            current += char
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == ":":
+            out.append(current)
+            current = ""
+        else:
+            current += char
+    out.append(current)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# What the network is doing.
+# ---------------------------------------------------------------------------
+
+
+def online() -> bool:
+    done = _run(["-t", "-f", "CONNECTIVITY", "general"])
+    return bool(done and done.stdout.strip() == "full")
+
+
+def devices() -> list:
+    done = _run(["-t", "-f", "DEVICE,TYPE,STATE", "device"])
+    if not done:
+        return []
+    out = []
+    for line in done.stdout.splitlines():
+        parts = _split(line)
+        if len(parts) >= 3:
+            out.append({"name": parts[0], "type": parts[1], "state": parts[2]})
+    return out
+
+
+def wifi_device() -> str:
+    return next((d["name"] for d in devices() if d["type"] == "wifi"), "")
+
+
+def wired_connected() -> bool:
+    return any(d["type"] == "ethernet" and d["state"].startswith("connected")
+               for d in devices())
+
+
+def current_network() -> str:
+    done = _run(["-t", "-f", "ACTIVE,SSID", "device", "wifi"])
+    if not done:
+        return ""
+    for line in done.stdout.splitlines():
+        parts = _split(line)
+        if len(parts) >= 2 and parts[0] == "yes":
+            return parts[1]
+    return ""
+
+
+def networks(rescan: bool = True) -> list:
+    """Wifi in range, strongest first, one entry per name.
+
+    A network with more than one access point appears once per radio, which on
+    a page reads as the same network listed three times.
+    """
+    if not wifi_device():
+        return []
+    args = ["-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY", "device", "wifi", "list"]
+    if rescan:
+        args += ["--rescan", "yes"]
+    done = _run(args, SCAN_TIMEOUT)
+    if not done:
+        return []
+    best: dict = {}
+    for line in done.stdout.splitlines():
+        parts = _split(line)
+        if len(parts) < 4:
+            continue
+        in_use, ssid, signal, security = parts[0], parts[1], parts[2], parts[3]
+        if not ssid:
+            continue                      # a hidden network has no name to show
+        try:
+            strength = int(signal)
+        except ValueError:
+            strength = 0
+        entry = {"ssid": ssid, "signal": strength,
+                 "security": security.strip(),
+                 "secured": bool(security.strip()),
+                 "in_use": in_use.strip() == "*"}
+        if ssid not in best or strength > best[ssid]["signal"]:
+            best[ssid] = entry
+    out = list(best.values())
+    out.sort(key=lambda n: (not n["in_use"], -n["signal"]))
+    return out
+
+
+def saved_networks() -> set:
+    done = _run(["-t", "-f", "NAME,TYPE", "connection", "show"])
+    if not done:
+        return set()
+    return {_split(l)[0] for l in done.stdout.splitlines()
+            if len(_split(l)) >= 2 and "wireless" in _split(l)[1]}
+
+
+def connect(ssid: str, password: str = "", hidden: bool = False) -> tuple:
+    """Join a network. Returns (joined, what to say if not)."""
+    device = wifi_device()
+    if not device:
+        return False, "This television has no wifi adapter."
+    args = ["device", "wifi", "connect", ssid, "ifname", device]
+    if password:
+        args += ["password", password]
+    if hidden:
+        args += ["hidden", "yes"]
+    done = _run(args, CONNECT_TIMEOUT)
+    if done is None:
+        return False, "The network manager did not answer."
+    if done.returncode == 0:
+        return True, ""
+    message = (done.stderr or done.stdout or "").strip().splitlines()
+    reason = message[-1] if message else "could not join"
+    # nmcli says the same unhelpful thing for a wrong password as for a network
+    # that went away, so the common case gets named.
+    lowered = reason.lower()
+    if "secrets were required" in lowered or "no secrets" in lowered:
+        reason = "That password was not accepted."
+    elif "timeout" in lowered:
+        reason = "The network did not answer in time."
+    return False, reason
+
+
+def forget(ssid: str) -> bool:
+    done = _run(["connection", "delete", ssid])
+    return bool(done and done.returncode == 0)
+
+
+# ---------------------------------------------------------------------------
+# Having been done.
+# ---------------------------------------------------------------------------
+
+
+def done() -> bool:
+    return STAMP.exists()
+
+
+def mark_done() -> None:
+    STAMP.parent.mkdir(parents=True, exist_ok=True)
+    STAMP.write_text("setup finished\n")
+
+
+def reset() -> None:
+    try:
+        STAMP.unlink()
+    except OSError:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# The catalogue, borrowed from the command that owns it.
+# ---------------------------------------------------------------------------
+
+
+def services():
+    """The freetvos-service module, loaded from its own file.
+
+    It lives in /usr/bin with no extension, so it is not importable by name,
+    and duplicating the catalogue here would mean two lists to keep level.
+    """
+    import importlib.machinery
+    import importlib.util
+    path = os.environ.get("FREETVOS_SERVICE_CMD", "/usr/bin/freetvos-service")
+    loader = importlib.machinery.SourceFileLoader("freetvos_service", path)
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+
+
+# ---------------------------------------------------------------------------
+# Commands.
+# ---------------------------------------------------------------------------
+
+
+def cmd_status(_args) -> int:
+    print(f"setup done:  {'yes' if done() else 'no'}")
+    print(f"online:      {'yes' if online() else 'no'}")
+    print(f"wired:       {'connected' if wired_connected() else 'no'}")
+    device = wifi_device()
+    print(f"wifi:        {device or 'no adapter'}")
+    if device:
+        print(f"joined:      {current_network() or 'nothing'}")
+    return 0
+
+
+def cmd_networks(_args) -> int:
+    found = networks()
+    if not found:
+        print("nothing in range, or no wifi adapter")
+        return 1
+    for network in found:
+        mark = "*" if network["in_use"] else " "
+        lock = "locked" if network["secured"] else "open"
+        print(f"{mark} {network['signal']:3}%  {lock:6}  {network['ssid']}")
+    return 0
+
+
+def cmd_reset(_args) -> int:
+    reset()
+    print("setup will run again")
+    return 0
+
+
+def cmd_run(args) -> int:
+    if args.once and done():
+        return 0
+    sys.path.insert(0, "/usr/share/freetvos")
+    import setupui
+    return setupui.run(sys.modules[__name__])
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        prog="freetvos-setup", description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="cmd")
+    p_run = sub.add_parser("run")
+    p_run.add_argument("--once", action="store_true",
+                       help="do nothing if setup has already been done")
+    p_run.set_defaults(func=cmd_run)
+    sub.add_parser("status").set_defaults(func=cmd_status)
+    sub.add_parser("networks").set_defaults(func=cmd_networks)
+    sub.add_parser("reset").set_defaults(func=cmd_reset)
+
+    args = parser.parse_args()
+    if not args.cmd:
+        parser.print_help()
+        return 2
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
