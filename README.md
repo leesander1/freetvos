@@ -29,6 +29,14 @@ and `python3 tools/showcase.py demo` take them again.
 | **Library.** A USB drive, a Plex server or a Jellyfin server, and where you left off. | **Inputs.** A console or set-top box through a USB HDMI capture device. |
 | ![Picture and sound settings](docs/images/picture-sound.png) | ![Choosing what goes in split view](docs/images/split-picker.png) |
 | **Picture & Sound.** Resolution, overscan, output, volume and Bluetooth, laid out for a remote. | **Split view.** Two services side by side, with the sound following the one in focus. |
+| ![Stock, score and news bars on the home screen](docs/images/tickers-home.png) | ![The Tickers settings](docs/images/tickers.png) |
+| **Tickers.** Stock prices, live scores and your own headlines, stacked above whatever is playing. | **Each on its own schedule.** Always, while the market is open, while games are live, or at set hours. |
+| ![Choosing stocks for the ticker](docs/images/stock-picker.png) | ![Picture in picture](docs/images/pip.png) |
+| **Choosing stocks.** Search by company, pick from the popular list, and put them in order. | **Picture in picture.** One service full screen and another small in the corner. |
+| ![The Live TV guide](docs/images/livetv-guide.png) | ![Watching a Live TV channel](docs/images/livetv-watching.png) |
+| **Live TV.** A programme guide from Tunarr, an HDHomeRun tuner or a playlist. The channels here are test patterns. | **Changing channel.** The number, what is on, and what is next. |
+| ![Joining a video call](docs/images/meetings.png) | |
+| **Meetings.** Zoom, Meet and Teams, joined by meeting ID and passcode with the remote. | |
 
 ## Why it is built this way
 

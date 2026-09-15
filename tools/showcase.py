@@ -43,11 +43,35 @@ STILLS = [
     ("inputs", "/usr/bin/freetvos-hdmi show", 14, []),
     ("picture-sound", "/usr/bin/freetvos-tune show", 14, []),
     ("split-picker", "/usr/bin/freetvos-split pick", 16, []),
+    ("tickers-home", None, 0, "bars-on"),
     ("tickers", "/usr/bin/freetvos-bars settings", 16, []),
     ("stock-picker", None, 0, ["down", "down", "down", "ret"]),
-    ("livetv-guide", "/usr/bin/freetvos-livetv browse", 18, []),
+    ("livetv-guide", "/usr/bin/freetvos-livetv browse", 18, "livetv-source"),
     ("livetv-watching", None, 0, "watch"),
+    ("pip", None, 0, "pip"),
+    ("meetings", "/usr/bin/freetvos-meet browse", 16, []),
 ]
+
+# Every bar switched on, for the one picture of them, and off again after, so
+# the other pictures show their page rather than a stack of bars across it.
+BARS = """runuser -u tv -- env HOME=/var/home/tv XDG_CONFIG_HOME=/var/home/tv/.config \
+python3 - <<'EOF'
+import importlib.machinery, importlib.util
+l = importlib.machinery.SourceFileLoader("b", "/usr/bin/freetvos-bars")
+s = importlib.util.spec_from_loader(l.name, l)
+b = importlib.util.module_from_spec(s)
+l.exec_module(b)
+on = {on}
+b.update_bar("stocks", enabled=on, when="always")
+b.update_bar("sports", enabled=on, when="always")
+b.update_bar("custom", enabled=on, when="always", title="FREETVOS",
+             message="Welcome to the living room",
+             feed="https://feeds.bbci.co.uk/news/rss.xml")
+EOF"""
+
+# The pretend Tunarr in tools/, reached from the VM at the Mac's address.
+LIVETV_SOURCE = ("runuser -u tv -- env HOME=/var/home/tv "
+                 "freetvos-livetv add-tunarr 10.0.2.2:8951 >/dev/null 2>&1")
 
 
 # A stand-in for nmcli inside the VM, answering only the three questions the
@@ -152,10 +176,31 @@ def stills() -> int:
     IMAGES.mkdir(parents=True, exist_ok=True)
     close_everything()
     for n, (name, command, wait, extra) in enumerate(STILLS):
+        if extra == "livetv-source":
+            vm(LIVETV_SOURCE)
         if command:
             close_everything()
             open_surface(command, wait, f"showcase{n}")
-        if extra == "row-start":
+        if extra == "bars-on":
+            close_everything()
+            vm(BARS.format(on="True"))
+            # The service looks every ten seconds, then the prices, scores and
+            # headlines have to arrive before the overlay draws anything.
+            time.sleep(35)
+            keys(*["left"] * 25, gap=0.12)
+            time.sleep(2)
+        elif extra == "pip":
+            close_everything()
+            for app in ("youtube", "espnplus"):
+                open_surface("/usr/bin/kioclient exec "
+                             f"/usr/share/applications/freetvos-{app}.desktop",
+                             4, f"showcase{n}{app}", keep=True)
+            time.sleep(22)
+            vm("runuser -u tv -- env XDG_RUNTIME_DIR=/run/user/1000 "
+               "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus "
+               "/usr/bin/freetvos-split pip >/dev/null 2>&1")
+            time.sleep(6)
+        elif extra == "row-start":
             # Back to the first tile, however far along the row the last
             # person left it. The start of the row is the first impression.
             keys(*["left"] * 25, gap=0.12)
@@ -188,6 +233,8 @@ def stills() -> int:
         target = IMAGES / f"{name}.png"
         grab(target)
         print(f"  {target.relative_to(REPO)}")
+        if extra == "bars-on":
+            vm(BARS.format(on="False"))
     close_everything()
     return 0
 

@@ -20,6 +20,34 @@ Window {
     property var bars: []
     property int barHeight: Math.round(Screen.height * 0.06)
     property string lastPayload: ""
+    // One width for every label on the left, the widest of them. Sized each to
+    // its own word, SCORES came out narrower than MARKETS above it, and a stack
+    // of bars whose labels do not line up looks unfinished.
+    property real badgeWidth: 0
+
+    TextMetrics {
+        id: titleMetrics
+        font.pixelSize: root.barHeight * 0.36
+        font.weight: Font.DemiBold
+        font.family: "Noto Sans"
+    }
+
+    function measureBadges() {
+        var widest = 0;
+        for (var i = 0; i < bars.length; i++) {
+            titleMetrics.text = bars[i].title || "";
+            var w = bars[i].title ? titleMetrics.advanceWidth : 0;
+            if (bars[i].logo)
+                w += logoSlot + (bars[i].title ? barHeight * 0.18 : 0);
+            widest = Math.max(widest, w);
+        }
+        badgeWidth = Math.ceil(widest + barHeight * 0.5);
+    }
+
+    // The room a logo gets, so a wide one cannot push one label past the rest.
+    property real logoSlot: barHeight * 0.66 * 1.6
+
+    onBarsChanged: measureBadges()
 
     width: Screen.width
     height: Math.max(1, bars.length * barHeight)
@@ -91,7 +119,7 @@ Window {
                     id: badge
                     z: 2
                     height: parent.height
-                    width: badgeRow.implicitWidth + root.barHeight * 0.5
+                    width: root.badgeWidth
                     color: strip.modelData.accent || "#3DDC97"
 
                     Row {
@@ -103,7 +131,8 @@ Window {
                             visible: (strip.modelData.logo || "") !== ""
                             source: strip.modelData.logo || ""
                             height: root.barHeight * 0.66
-                            width: visible ? height * (implicitWidth / Math.max(1, implicitHeight)) : 0
+                            width: visible ? Math.min(root.logoSlot,
+                                height * (implicitWidth / Math.max(1, implicitHeight))) : 0
                             fillMode: Image.PreserveAspectFit
                             anchors.verticalCenter: parent.verticalCenter
                         }
