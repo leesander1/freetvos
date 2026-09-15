@@ -64,6 +64,7 @@ lint:
 	@python3 tools/test-tune.py
 	@python3 tools/test-sports.py
 	@python3 tools/test-setup.py
+	@python3 tools/test-tvui.py
 	@python3 tools/test-bars.py
 	@python3 tools/test-livetv.py
 	@python3 tools/test-meet.py

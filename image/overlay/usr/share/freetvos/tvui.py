@@ -38,6 +38,11 @@ ICON_DIRS = [
 ]
 ICON_SIZES = ["scalable", "512x512", "256x256", "128x128", "64x64"]
 
+# Brand artwork that is not an icon, such as the wide wordmark, which has no
+# place in a theme of square icons. Served by file name alone, from here only.
+BRAND_DIR = Path(os.environ.get("FREETVOS_BRAND_DIR", "/usr/share/freetvos/brand"))
+BRAND_TYPES = {".svg": "image/svg+xml", ".png": "image/png"}
+
 # One stylesheet for every surface. The 5% inset is television title-safe: the
 # outer edge of a panel is not reliably visible, and overscan on older sets eats
 # more than that.
@@ -341,6 +346,17 @@ def find_icon(name: str):
     return None, None
 
 
+def find_brand(name: str):
+    """A picture from the brand directory. Only the last part of the path is
+    used, so a request cannot climb out of it."""
+    name = Path(name).name
+    ctype = BRAND_TYPES.get(Path(name).suffix)
+    f = BRAND_DIR / name
+    if ctype and f.is_file():
+        return f, ctype
+    return None, None
+
+
 class App:
     """A set of routes, served to one fullscreen browser window."""
 
@@ -388,6 +404,13 @@ class App:
                     # Served from here rather than linked as file://, which a
                     # page loaded over http is not allowed to reach.
                     f, ctype = find_icon(Path(path).name)
+                    if f:
+                        self._send(200, f.read_bytes(), ctype)
+                    else:
+                        self._send(404)
+                    return
+                if path.startswith("/brand/"):
+                    f, ctype = find_brand(path)
                     if f:
                         self._send(200, f.read_bytes(), ctype)
                     else:

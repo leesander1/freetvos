@@ -173,6 +173,9 @@ COPY brand/png/splash/logo.png \
 COPY brand/png/splash/background.png \
      /usr/share/plasma/look-and-feel/org.freetvos.bigscreen/contents/splash/images/background.png
 COPY brand/png/wallpaper/ /usr/share/wallpapers/FreeTVOS/contents/images/
+# The wordmark heads the setup wizard's first page. The SVG, not a PNG: its text
+# is already outlined, so it stays sharp on a 4K panel and needs no fonts.
+COPY brand/logo/freetvos-wordmark.svg /usr/share/freetvos/brand/freetvos-wordmark.svg
 
 COPY --from=qmlruntime /usr/lib64/qt6/bin/qml /usr/lib64/qt6/bin/qml
 

@@ -13,6 +13,8 @@ import json
 import tvui
 
 WELCOME_BODY = """
+<img class="wordmark" src="/brand/freetvos-wordmark.svg" alt="FreeTVOS"
+     onerror="this.remove()">
 <h1>Welcome</h1>
 <p class="step">Two things and you are watching.</p>
 <div class="rows" id="rows">
@@ -22,7 +24,11 @@ WELCOME_BODY = """
 <p class="note">Joining a network, then choosing the apps you use. Both can be
 changed later, and this can be run again from Setup on the home screen.</p>
 <style>.note{font-size:22px;color:var(--dim);max-width:880px;line-height:1.5;
-             margin-top:30px}</style>
+             margin-top:30px}
+       /* The first thing a new television shows, so the product's name is on
+          it. The negative margin takes back the artwork's own left margin, so
+          the mark lines up with the heading beneath it. */
+       .wordmark{display:block;height:96px;width:auto;margin:0 0 34px -8px}</style>
 <script>
 __NAV__
 const cells = [...document.querySelectorAll('.row')];

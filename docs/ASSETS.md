@@ -152,7 +152,8 @@ they are made from, not them.
 | Tiles, 512 and 256 | `brand/png/hicolor/<size>/apps/freetvos-*.png` | The same, beside each tile's SVG |
 | Splash logo, 640 | `brand/png/splash/logo.png` | Plymouth, and the Plasma session splash |
 | Wallpaper, 4K and 1080p | `brand/png/wallpaper/` | The home screen |
-| Wordmark, dark and light | `brand/png/logo/freetvos-wordmark*.png` | Nothing in the image yet |
+| Wordmark, dark | `brand/logo/freetvos-wordmark.svg`, installed to `/usr/share/freetvos/brand` | The setup wizard's first page |
+| Wordmark, light | `brand/png/logo/freetvos-wordmark-light.png` | Nothing in the image yet |
 | Mark on light | `brand/png/logo/freetvos-mark-light.png` | Nothing in the image yet |
 | Spinner, 24 frames at 128 | `brand/png/splash/throbber-*.png` | Nothing: the theme shows a still mark on purpose |
 | Splash background, 1080p | `brand/png/splash/background.png` | Nothing: the theme paints the colour itself |
