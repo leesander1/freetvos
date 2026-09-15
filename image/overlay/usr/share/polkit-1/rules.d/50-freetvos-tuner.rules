@@ -1,0 +1,17 @@
+// The television's user may start and stop the tuner service, and nothing else.
+//
+// Switching tuner support on from Live TV starts TVHeadend. Without this rule
+// that needs an administrator password, typed on a remote. The rule names the
+// one unit and the three verbs, so it is not a way to start or stop anything
+// else, and it does not allow changing what starts at boot: that choice is kept
+// in a file the user owns, read by a boot unit.
+polkit.addRule(function (action, subject) {
+    if (action.id === "org.freedesktop.systemd1.manage-units" &&
+        subject.user === "tv" &&
+        action.lookup("unit") === "tvheadend.service") {
+        var verb = action.lookup("verb");
+        if (verb === "start" || verb === "stop" || verb === "restart") {
+            return polkit.Result.YES;
+        }
+    }
+});

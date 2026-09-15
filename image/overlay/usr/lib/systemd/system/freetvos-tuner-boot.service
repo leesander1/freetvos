@@ -1,0 +1,14 @@
+[Unit]
+Description=Start the TV tuner service if tuner support was switched on
+# The choice lives in a file the television's user owns, not in an enabled
+# unit, because that user may start and stop the service but may not change
+# what starts at boot.
+ConditionPathExists=/var/lib/freetvos/tuner-enabled
+After=local-fs.target systemd-tmpfiles-setup.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl start --no-block tvheadend.service
+
+[Install]
+WantedBy=multi-user.target

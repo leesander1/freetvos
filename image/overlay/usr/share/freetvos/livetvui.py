@@ -8,6 +8,7 @@ page's own keyboard, so the tile is never a dead end.
 import datetime as dt
 import html
 import json
+import os
 import subprocess
 import sys
 
@@ -269,6 +270,7 @@ function ask(label, then) {
 
 function choose(i) {
   const it = ITEMS[i];
+  if (it.kind === 'tuner') { location.href = '/tuner'; return; }
   if (it.kind === 'source') { post('/remove', { index: it.index }); return; }
   if (it.kind === 'tunarr') {
     ask('Tunarr address, such as tunarr.lan', v => post('/add', { kind: 'tunarr', address: v }));
@@ -283,6 +285,153 @@ function choose(i) {
 const nav = tvnav([...rows.children], choose, () => { location.href = '/'; });
 </script>
 """
+
+
+TUNER_BODY = """
+<h1>Tuner in this box</h1>
+<p class="step" id="step">__STEP__</p>
+<div class="rows" id="rows"></div>
+<div class="msg" id="msg"></div>
+<p class="hint">__HINT__</p>
+<style>
+ .hdr{font-size:28px;margin:30px 0 4px}
+ .hdr .sub{display:block;font-size:18px;color:var(--dim);margin-top:4px}
+</style>
+<script>
+__NAV__
+const ITEMS = __ITEMS__;
+const UP = __UP__;
+const rows = document.getElementById('rows');
+const msg = document.getElementById('msg');
+const cells = [];
+ITEMS.forEach(it => {
+  const el = document.createElement('div');
+  if (it.kind === 'header') {
+    el.className = 'hdr';
+    el.textContent = it.text;
+    if (it.sub) { const s = document.createElement('span'); s.className = 'sub';
+                  s.textContent = it.sub; el.appendChild(s); }
+    rows.appendChild(el);
+    return;
+  }
+  el.className = it.kind === 'action' ? 'row act' : 'row';
+  const k = document.createElement('div'); k.className = 'k'; k.textContent = it.label;
+  el.appendChild(k);
+  if (it.note) { const v = document.createElement('div'); v.className = 'v';
+                 v.textContent = it.note; el.appendChild(v); }
+  rows.appendChild(el);
+  cells.push({ el: el, it: it });
+});
+
+// Left and right jump to the next country, because there are over a thousand
+// transmitters for antenna television in Europe alone.
+const firsts = [];
+cells.forEach((c, i) => {
+  const key = c.it.group || '';
+  if (key && (!firsts.length || firsts[firsts.length - 1].key !== key)) firsts.push({ key: key, i: i });
+});
+let nav = null;
+
+function choose(i) {
+  const it = cells[i].it;
+  if (it.go) { location.href = it.go; return; }
+  if (!it.post) return;
+  msg.className = 'msg';
+  msg.textContent = it.busy || 'Working\u2026';
+  fetch(it.post, { method: 'POST', body: JSON.stringify(it.body || {}) })
+    .then(r => r.json())
+    .then(r => {
+      if (r.error) { msg.className = 'msg bad'; msg.textContent = r.error; return; }
+      location.href = r.go || location.href;
+    });
+}
+
+if (cells.length) {
+  nav = tvnav(cells.map(c => c.el), choose, () => { location.href = UP; });
+  addEventListener('keydown', e => {
+    if (firsts.length < 3 || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
+    const here = nav.current();
+    let at = 0;
+    firsts.forEach((f, n) => { if (f.i <= here) at = n; });
+    const to = firsts[Math.min(Math.max(at + (e.key === 'ArrowRight' ? 1 : -1), 0), firsts.length - 1)];
+    nav.to(to.i);
+    e.preventDefault();
+  });
+} else {
+  addEventListener('keydown', e => { if (e.key === 'Backspace') location.href = UP; });
+}
+</script>
+"""
+
+PROGRESS_BODY = """
+<h1>Scanning for channels</h1>
+<p class="step" id="step">Starting\u2026</p>
+<div class="bar"><i id="fill" style="width:0%"></i></div>
+<div class="rows" id="rows" style="margin-top:34px"></div>
+<div class="msg" id="msg"></div>
+<p class="hint">This can take several minutes. Back leaves it running.</p>
+<script>
+__NAV__
+const step = document.getElementById('step');
+const fill = document.getElementById('fill');
+const rows = document.getElementById('rows');
+const msg = document.getElementById('msg');
+
+function finish(label, go) {
+  rows.innerHTML = '';
+  const el = document.createElement('div');
+  el.className = 'row act';
+  el.innerHTML = '<div class="k"></div>';
+  el.querySelector('.k').textContent = label;
+  rows.appendChild(el);
+  tvnav([el], () => { location.href = go; }, () => { location.href = '/tuner'; });
+}
+
+function poll() {
+  fetch('/tuner/progress', { method: 'POST', body: '{}' })
+    .then(r => r.json())
+    .then(p => {
+      if (p.state === 'failed') {
+        step.textContent = 'The scan stopped';
+        msg.className = 'msg bad';
+        msg.textContent = p.error || 'Something went wrong.';
+        finish('Back', '/tuner');
+        return;
+      }
+      if (p.state === 'done') {
+        fill.style.width = '100%';
+        step.textContent = (p.channels || p.services || 0) + ' channels found';
+        finish(p.services ? 'Open the guide' : 'Back', p.services ? '/' : '/tuner');
+        return;
+      }
+      const total = p.muxes || 0, done = p.done || 0;
+      fill.style.width = (total ? Math.round(done / total * 100) : 0) + '%';
+      step.textContent = total ? ('Frequency ' + done + ' of ' + total + ', '
+                                  + (p.services || 0) + ' services so far')
+                               : 'Starting\u2026';
+      setTimeout(poll, 2000);
+    })
+    .catch(() => setTimeout(poll, 4000));
+}
+addEventListener('keydown', e => { if (e.key === 'Backspace') location.href = '/tuner'; });
+poll();
+</script>
+"""
+
+
+def tuner_module():
+    """The tuner command, loaded from its own file, or None if absent."""
+    import importlib.machinery
+    import importlib.util
+    import os
+    path = os.environ.get("FREETVOS_TUNER_CMD", "/usr/bin/freetvos-tuner")
+    if not os.path.exists(path):
+        return None
+    loader = importlib.machinery.SourceFileLoader("freetvos_tuner", path)
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
 
 
 def run(livetv) -> int:
@@ -324,6 +473,12 @@ def run(livetv) -> int:
                           "label": source.get("label") or source.get("playlist")
                           or source.get("address"),
                           "note": "Enter removes it"})
+        tuner = tuner_module()
+        if tuner is not None:
+            present = tuner.tuners_present()
+            note = ("On" if tuner.enabled() else
+                    (f"{len(present)} plugged in, switched off" if present else "Off"))
+            items.append({"kind": "tuner", "label": "Tuner in this box", "note": note})
         items += [{"kind": "tunarr", "label": "Add Tunarr"},
                   {"kind": "hdhomerun", "label": "Add an HDHomeRun tuner"},
                   {"kind": "m3u", "label": "Add a playlist and guide"}]
@@ -362,6 +517,93 @@ def run(livetv) -> int:
         state["watch"] = int(payload.get("index", 0))
         return {"ok": True}
 
+    def tuner_page(_query):
+        tuner = tuner_module()
+        if tuner is None:
+            return "<h1>Tuner support is not installed</h1>"
+        present = tuner.tuners_present()
+        on = tuner.enabled()
+        items = [{"kind": "row", "label": "Tuner support",
+                  "note": "On" if on else "Off",
+                  "post": "/tuner/toggle",
+                  "busy": "Stopping\u2026" if on else "Starting the tuner service\u2026"}]
+        if on:
+            items.append({"kind": "header", "text": "Scan for channels",
+                          "sub": "Choose how the television signal arrives"})
+            for s in tuner.STANDARDS:
+                items.append({"kind": "row", "label": s["name"], "note": s["where"],
+                              "go": f"/tuner/regions?standard={s['id']}"})
+            last = tuner.progress()
+            if last.get("state") in ("starting", "scanning"):
+                items.insert(1, {"kind": "action", "label": "A scan is running: see it",
+                                 "go": "/tuner/scanning"})
+        if not present:
+            step = ("No tuner is plugged in. Tuner support can be switched on "
+                    "now and used when one is.")
+        else:
+            step = f"{len(present)} tuner input{'s' if len(present) != 1 else ''} plugged in."
+        hint = "Enter to choose. Backspace returns to sources."
+        return (TUNER_BODY.replace("__NAV__", tvui.NAV_JS)
+                          .replace("__STEP__", html.escape(step))
+                          .replace("__HINT__", hint)
+                          .replace("__UP__", json.dumps("/sources"))
+                          .replace("__ITEMS__", json.dumps(items)))
+
+    def regions_page(query):
+        tuner = tuner_module()
+        standard = query.get("standard", "")
+        try:
+            found = tuner.regions(standard)
+        except tuner.TunerError as exc:
+            return (f"<h1>Could not list regions</h1><p class=\"step\">"
+                    f"{html.escape(str(exc))}</p>")
+        items = [{"kind": "row", "label": r["place"], "note": r["country"],
+                  "group": r["country"], "post": "/tuner/scan",
+                  "body": {"standard": standard, "scanfile": r["key"]},
+                  "busy": "Starting the scan\u2026"} for r in found]
+        std = tuner.BY_ID.get(standard, {})
+        step = (f"{std.get('name', '')}: choose the nearest transmitter or the "
+                f"frequency plan for your area.")
+        hint = "Left and right jump by country. Backspace goes back."
+        return (TUNER_BODY.replace("__NAV__", tvui.NAV_JS)
+                          .replace("__STEP__", html.escape(step))
+                          .replace("__HINT__", hint)
+                          .replace("__UP__", json.dumps("/tuner"))
+                          .replace("__ITEMS__", json.dumps(items)))
+
+    def scanning_page(_query):
+        return PROGRESS_BODY.replace("__NAV__", tvui.NAV_JS)
+
+    def do_tuner_toggle(_payload):
+        tuner = tuner_module()
+        try:
+            tuner.set_enabled(not tuner.enabled())
+        except tuner.TunerError as exc:
+            return {"error": str(exc)}
+        return {"go": "/tuner"}
+
+    def do_tuner_scan(payload):
+        tuner = tuner_module()
+        standard, scanfile = payload.get("standard", ""), payload.get("scanfile", "")
+        if standard not in tuner.BY_ID or not scanfile:
+            return {"error": "Choose a standard and a region first."}
+        # In the background, so the page can show progress and the viewer can
+        # leave it running; the command writes its progress to a file.
+        command = os.environ.get("FREETVOS_TUNER_CMD", "/usr/bin/freetvos-tuner")
+        subprocess.Popen([sys.executable, command, "scan", standard, scanfile],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+        return {"go": "/tuner/scanning"}
+
+    def do_tuner_progress(_payload):
+        return tuner_module().progress()
+
+    app.get("/tuner", tuner_page)
+    app.get("/tuner/regions", regions_page)
+    app.get("/tuner/scanning", scanning_page)
+    app.post("/tuner/toggle", do_tuner_toggle)
+    app.post("/tuner/scan", do_tuner_scan)
+    app.post("/tuner/progress", do_tuner_progress)
     app.get("/", guide_page)
     app.get("/sources", sources_page)
     app.post("/add", do_add)

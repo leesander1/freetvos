@@ -100,6 +100,15 @@ RUN dnf install -y --setopt=install_weak_deps=False \
       dosfstools \
  && dnf clean all
 
+# TV tuners. TVHeadend tunes, scans and reads the broadcast guide; the firmware
+# package carries what many USB and PCIe tuners load when plugged in. Both are
+# installed and neither runs: tuner support is switched on from Live TV, and
+# until then TVHeadend is not started at all.
+RUN dnf install -y --setopt=install_weak_deps=False \
+      tvheadend \
+      dvb-firmware \
+ && dnf clean all
+
 # ---------------------------------------------------------------------------
 # Casting receivers.
 #
@@ -169,7 +178,7 @@ RUN chmod 0755 /usr/bin/freetvos-webapp /usr/bin/freetvos-firstboot \
               /usr/bin/freetvos-setup /usr/bin/freetvos-jellyfin \
               /usr/bin/freetvos-bars \
               /usr/bin/freetvos-livetv /usr/bin/freetvos-livetv-player \
-              /usr/bin/freetvos-meet \
+              /usr/bin/freetvos-meet /usr/bin/freetvos-tuner \
  && python3 /usr/share/freetvos/generate-desktop-entries.py \
  && python3 /usr/share/freetvos/curate-apps.py \
  && python3 /usr/share/freetvos/brand-os-release.py \
@@ -219,6 +228,7 @@ RUN systemctl enable sddm avahi-daemon bluetooth NetworkManager sshd \
  && systemctl --global enable freetvos-hdmi-monitor.service \
  && systemctl --global enable freetvos-setup.service \
  && systemctl --global enable freetvos-bars.service \
+ && systemctl enable freetvos-tuner-boot.service \
  && systemctl enable freetvos-airplay.service freetvos-firstboot.service freetvos-dial.service \
  && systemctl set-default graphical.target \
  && if [ "$BUNDLE_WIDEVINE" != "yes" ]; then \

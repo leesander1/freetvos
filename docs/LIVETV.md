@@ -15,9 +15,58 @@ Tunarr turns a Plex or Jellyfin library into scheduled channels. It publishes
 them as an M3U playlist at `/api/channels.m3u` with an XMLTV guide at
 `/api/xmltv.xml`, and also pretends to be an HDHomeRun tuner. Either door works.
 
-A tuner card plugged into this box directly is not supported. That needs
-TVHeadend running here, which it is not; run TVHeadend on another machine and add
-it by playlist instead.
+A USB or PCIe tuner plugged into the box itself works too, as an option: see
+below.
+
+## A tuner in this box
+
+**Sources**, then **Tuner in this box**. It is off until switched on, and until
+then nothing about it runs.
+
+Switching it on starts TVHeadend, which does the tuning, the channel scan and
+the guide read from the broadcast. It listens on the box itself and nowhere else,
+so there is no login to set up. Then choose how the signal arrives, and the
+nearest transmitter or frequency plan, and it scans:
+
+| Choice | Where |
+|---|---|
+| Antenna | United States, Canada, Mexico, South Korea |
+| Cable | United States |
+| Antenna | Europe, Australia, most of Asia and Africa |
+| Cable | Europe |
+| Antenna | Japan, Brazil and most of South America |
+
+A scan takes several minutes and can be left running. When it finishes, the
+tuner's channels are in the guide with everything else, and the guide comes from
+the broadcast itself.
+
+Satellite is not offered: a dish needs its LNB and switch described before a scan
+means anything, which is not a question for a remote.
+
+### Which tuners work
+
+Any tuner Linux has a driver for. The common ones are already in the image,
+including Hauppauge WinTV, PCTV, and Realtek based USB sticks, and the firmware
+many of them load is installed too. The choice to use it is kept across
+restarts.
+
+### What has been checked
+
+Everything except a tuner. There is none in the VM and the kernel's virtual tuner
+is not built for this kernel. Checked on the device: TVHeadend starting and
+answering, and its channel list and guide reaching Live TV after a scan run
+against a playlist in place of a tuner. Checked against TVHeadend itself:
+choosing a US antenna plan creates the network's 68 frequencies ready to scan.
+Not checked: attaching a real tuner to that network and receiving a channel.
+
+Two things the first device run found. TVHeadend turns what a scan finds into
+channels a few seconds after the scan ends, not during it, so the scan first
+reported "0 channels" for a list that had three; it now waits for them. And only
+what the new scan found is turned into channels, so scanning a second time, or
+for a second kind of signal, leaves the first network's channels as they were.
+
+TVHeadend brings in the HDHomeRun configuration program, which added a desktop
+tool to the home screen. It is hidden.
 
 ## The guide
 
