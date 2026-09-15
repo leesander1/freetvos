@@ -1,0 +1,247 @@
+#!/usr/bin/python3
+"""Pin what is on screen, for the FreeTVOS pin extension.
+
+Chromium starts this when the pin panel asks something. It passes one message
+on standard input and reads one answer back, in native messaging's framing: a
+four byte length, then JSON. The registration in
+/etc/chromium/native-messaging-hosts/org.freetvos.pin.json lets only the pin
+extension start it.
+
+The page decides nothing that matters. It suggests a name and a poster. The
+address comes from Chromium's own record of the tab, and the service from the
+browser that started this helper: every service runs in its own Chromium with
+its own profile directory, so the process that launched this one says which
+service it is. A page cannot pin itself into a different app, and a browser that
+is not a FreeTVOS service cannot pin at all.
+
+The work is freetvos-pin's, which checks everything again before writing it.
+"""
+import json
+import os
+import re
+import struct
+import subprocess
+import sys
+from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+EXTENSION_ORIGIN = "chrome-extension://llindeglmgojidlmnmhlhcegdeameami/"
+
+PIN_CMD = os.environ.get("FREETVOS_PIN_CMD", "/usr/bin/freetvos-pin")
+PROC = Path(os.environ.get("FREETVOS_PIN_HOST_PROC", "/proc"))
+CONF_HOME = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+PINS_DIR = Path(os.environ.get("FREETVOS_PINS_DIR") or CONF_HOME / "freetvos/pins.d")
+USER_APPS = CONF_HOME / "freetvos/webapps"
+SYSTEM_APPS = Path(os.environ.get("FREETVOS_SYSTEM_WEBAPPS",
+                                  "/usr/share/freetvos/webapps"))
+
+MAX_MESSAGE = 64 * 1024
+APP_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+USER_DATA_DIR = re.compile(r"(?:^|\s)--user-data-dir=(\S+)")
+PROFILE = re.compile(r"/freetvos/webapps/([^/]+)/?$")
+# How someone arrived rather than what they are watching. Left in, the same show
+# reached from two rows of a service would look like two different pins.
+TRACKING = re.compile(r"^(utm_.*|trackId|tctx|si|pp|feature|ref|ref_|src)$")
+UNCLEAR = {"ok": False, "error": "That request did not make sense."}
+
+
+# ------------------------------------------------------------- framing ---
+
+def read_message(stream):
+    header = stream.read(4)
+    if len(header) < 4:
+        return None
+    (length,) = struct.unpack("=I", header)
+    if length > MAX_MESSAGE:
+        raise ValueError("message too large")
+    return json.loads(stream.read(length).decode("utf-8"))
+
+
+def write_message(stream, obj) -> None:
+    data = json.dumps(obj).encode("utf-8")
+    stream.write(struct.pack("=I", len(data)))
+    stream.write(data)
+    stream.flush()
+
+
+# ------------------------------------------------------ which service ---
+
+def app_from_cmdline(args) -> str:
+    """The service a Chromium command line belongs to, or '' for none.
+
+    Chromium rewrites its own process title, so the browser's command line in
+    /proc arrives as one string with spaces between the switches rather than as
+    separate arguments. Both forms are read. None of it comes from a page.
+    """
+    for arg in args:
+        for value in USER_DATA_DIR.findall(arg):
+            found = PROFILE.search(value)
+            if found and APP_ID.match(found.group(1)):
+                return found.group(1)
+    return ""
+
+
+def parent_of(pid: int) -> int:
+    stat = (PROC / str(pid) / "stat").read_text()
+    # The command name sits in brackets and may hold spaces or brackets itself,
+    # so the fields worth reading are the ones after the last closing bracket.
+    return int(stat.rsplit(")", 1)[1].split()[1])
+
+
+def calling_app(pid=None) -> str:
+    """Walk up from this helper to the Chromium that started it."""
+    pid = os.getppid() if pid is None else pid
+    for _ in range(8):
+        if pid <= 1:
+            break
+        try:
+            raw = (PROC / str(pid) / "cmdline").read_bytes()
+        except OSError:
+            break
+        args = [a.decode("utf-8", "replace") for a in raw.split(b"\0") if a]
+        app = app_from_cmdline(args)
+        if app:
+            return app
+        try:
+            pid = parent_of(pid)
+        except (OSError, ValueError, IndexError):
+            break
+    return ""
+
+
+def app_defined(app: str) -> bool:
+    return (USER_APPS / f"{app}.app").is_file() or \
+           (SYSTEM_APPS / f"{app}.app").is_file()
+
+
+# ---------------------------------------------------------- addresses ---
+
+def valid_link(url) -> bool:
+    if not isinstance(url, str) or not url or len(url) > 2000:
+        return False
+    if re.search(r"[\s\x00-\x1f\x7f\\\"`]", url):
+        return False
+    parts = urlsplit(url)
+    return parts.scheme in ("http", "https") and bool(parts.netloc)
+
+
+def normalise(url: str) -> str:
+    """One spelling per page, for telling whether it is already pinned."""
+    parts = urlsplit(url.replace("$", "%24"))
+    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
+             if not TRACKING.match(k)]
+    return urlunsplit((parts.scheme.lower(), parts.netloc.lower(),
+                       parts.path.rstrip("/") or "/", urlencode(query), ""))
+
+
+def clean_name(name) -> str:
+    name = name if isinstance(name, str) else ""
+    name = re.sub(r"[\x00-\x1f\x7f]", " ", name)
+    return re.sub(r"\s+", " ", name).strip()[:80].strip()
+
+
+# --------------------------------------------------------------- pins ---
+
+def read_pin(path: Path) -> dict:
+    """A pin file, as text. Never sourced: a name can come from a web page."""
+    values = {}
+    for line in path.read_text(errors="replace").splitlines():
+        if line.startswith("#"):
+            continue
+        key, sep, value = line.partition("=")
+        if not sep:
+            continue
+        # Pins written before this helper existed quoted their values.
+        if len(value) >= 2 and value[0] == value[-1] == '"':
+            value = value[1:-1]
+        values[key] = value
+    return values
+
+
+def find_pin(app: str, url: str):
+    if not PINS_DIR.is_dir():
+        return None
+    want = normalise(url)
+    for path in sorted(PINS_DIR.glob("*.pin")):
+        pin = read_pin(path)
+        if pin.get("APP") == app and valid_link(pin.get("URL")) \
+                and normalise(pin["URL"]) == want:
+            return {"id": path.stem, "name": pin.get("NAME", "")}
+    return None
+
+
+def run_pin(args):
+    try:
+        done = subprocess.run([PIN_CMD, *args], capture_output=True, text=True,
+                              timeout=90)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, str(exc)
+    lines = (done.stderr.strip() or done.stdout.strip()).splitlines()
+    return done.returncode == 0, (lines[-1] if lines else "")
+
+
+# ------------------------------------------------------------ requests ---
+
+def handle(msg, app: str) -> dict:
+    if not isinstance(msg, dict) or msg.get("op") not in ("status", "pin", "unpin"):
+        return UNCLEAR
+    op, url = msg["op"], msg.get("url")
+    if not app:
+        return {"ok": False,
+                "error": "Only a service opened from the home screen can be pinned."}
+    if not app_defined(app):
+        return {"ok": False,
+                "error": "This service is no longer installed, so it cannot be pinned."}
+    if not valid_link(url):
+        return {"ok": False, "error": "This page has no address that can be pinned."}
+
+    existing = find_pin(app, url)
+    answer = {"ok": True, "app": app, "pinned": bool(existing),
+              "id": existing["id"] if existing else ""}
+
+    if op == "status":
+        return answer
+
+    if op == "unpin":
+        if existing:
+            ok, detail = run_pin(["remove", existing["id"]])
+            if not ok:
+                return {"ok": False, "error": f"It could not be removed: {detail}"}
+        return {**answer, "pinned": False, "id": ""}
+
+    if existing:
+        return answer
+    name = clean_name(msg.get("name"))
+    if not name:
+        return {"ok": False, "error": "This page has no name to pin it under."}
+    args = ["add", "--name", name, "--app", app, "--url", url]
+    image = msg.get("image")
+    if valid_link(image) and image.startswith("https://"):
+        args += ["--image", image]
+    ok, detail = run_pin(args)
+    if not ok:
+        return {"ok": False, "error": f"It could not be pinned: {detail}"}
+    pinned = find_pin(app, url)
+    return {**answer, "pinned": bool(pinned), "id": pinned["id"] if pinned else "",
+            "name": name}
+
+
+def main() -> int:
+    # Chromium names the extension that asked as the first argument. The
+    # registration already admits only the pin extension; this also refuses
+    # anything else, should that file ever be widened.
+    if len(sys.argv) > 1 and sys.argv[1] != EXTENSION_ORIGIN:
+        return 1
+    try:
+        msg = read_message(sys.stdin.buffer)
+    except (ValueError, UnicodeDecodeError):
+        write_message(sys.stdout.buffer, UNCLEAR)
+        return 1
+    if msg is None:
+        return 0
+    write_message(sys.stdout.buffer, handle(msg, calling_app()))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

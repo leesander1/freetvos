@@ -30,9 +30,37 @@ PINS_DIR="${FREETVOS_PINS_DIR:-$CONF_HOME/freetvos/pins.d}"
 ICON_DIR="${FREETVOS_ICON_DIR:-$DATA_HOME/freetvos/posters}"
 APPS_DIR="${FREETVOS_PIN_APPS_DIR:-$DATA_HOME/applications}"
 CONF="${FREETVOS_TMDB_CONF:-/etc/freetvos/tmdb.conf}"
+SYSTEM_APPS="${FREETVOS_SYSTEM_WEBAPPS:-/usr/share/freetvos/webapps}"
 
 die() { echo "$*" >&2; exit 1; }
-slug() { echo "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]\+/-/g; s/^-//; s/-$//'; }
+# sed -E rather than GNU's \+, so the same line works wherever the tests run.
+slug() { echo "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-//; s/-$//'; }
+
+# What a pin is made of can now come from a web page, through the pin key on
+# the remote, and not only from someone typing at a terminal. A name with a
+# newline in it could add lines to the desktop entry, and pin files used to be
+# read back by sourcing them, so a name holding $(...) would have run. Checked
+# here, where it is written, rather than trusted to every caller.
+has_control() { case "$1" in *[[:cntrl:]]*) return 0 ;; esac; return 1; }
+
+valid_link() {
+  case "$1" in http://*|https://*) ;; *) return 1 ;; esac
+  case "$1" in *[[:space:][:cntrl:]\\\"\`]*) return 1 ;; esac
+  [ "${#1}" -le 2000 ]
+}
+
+# One argument on a desktop entry's Exec line, quoted, with % doubled so it is
+# not taken for a field code like %u. valid_link has already refused the quotes,
+# backslashes and backticks that would need escaping, and a dollar sign is sent
+# percent-encoded, which a server reads the same way.
+desktop_arg() { printf '"%s"' "${1//%/%%}"; }
+
+# One value from a pin file, read as text. Never sourced.
+pin_field() {
+  local v; v="$(sed -n "s/^$2=//p" "$1" | head -1)"
+  case "$v" in \"*\") v="${v#\"}"; v="${v%\"}" ;; esac
+  printf '%s' "$v"
+}
 
 usage() {
   cat <<'USAGE'
@@ -108,10 +136,25 @@ cmd_add() {
   [ -n "$name" ] || die "--name is required"
   [ -n "$app" ]  || die "--app is required"
   [ -n "$url" ]  || die "--url is required"
-  [ -r "/usr/share/freetvos/webapps/$app.app" ] \
-    || die "no such app: $app. See /usr/share/freetvos/webapps/"
+  has_control "$name" && die "--name cannot contain control characters"
+  [ "${#name}" -le 120 ] || die "--name is too long"
+  valid_link "$url" || die "--url must be one http or https address"
+  [ -z "$image" ] || valid_link "$image" || die "--image must be one http or https address"
+  url="${url//\$/%24}"
+  case "$app" in *[!a-z0-9-]*) die "no such app: $app" ;; esac
+  # Services added on the television live in the viewer's own config, not the
+  # image, and can be pinned just the same.
+  [ -r "$CONF_HOME/freetvos/webapps/$app.app" ] || [ -r "$SYSTEM_APPS/$app.app" ] \
+    || die "no such app: $app. See $SYSTEM_APPS/"
 
   local id; id="$(slug "$name")"
+  [ -n "$id" ] || id="pin"
+  # Two episodes both called "Chapter One" must not replace each other. The same
+  # address pinned again under the same name keeps its id.
+  local base="$id" n=2
+  while [ -e "$PINS_DIR/$id.pin" ] && [ "$(pin_field "$PINS_DIR/$id.pin" URL)" != "$url" ]; do
+    id="$base-$n"; n=$((n + 1))
+  done
   local icon="freetvos-pin-$id"
 
   # TMDB first whenever a key is configured. Scraping the service's own page
@@ -166,20 +209,22 @@ cmd_add() {
   fi
 
   install -d -m 0755 "$PINS_DIR"
-  cat > "$PINS_DIR/$id.pin" <<PIN
-NAME="$name"
-APP="$app"
-URL="$url"
-ICON="$icon_ref"
-PIN
+  {
+    echo "# A FreeTVOS pin. Read a line at a time, never sourced."
+    printf 'NAME=%s\nAPP=%s\nURL=%s\nICON=%s\n' "$name" "$app" "$url" "$icon_ref"
+  } > "$PINS_DIR/$id.pin"
+
+  # A desktop entry reads \\ as one backslash in a value.
+  local desk_name="${name//\\/\\\\}"
+  local exec_url; exec_url="$(desktop_arg "$url")"
 
   install -d -m 0755 "$APPS_DIR"
   cat > "$APPS_DIR/freetvos-pin-$id.desktop" <<DESK
 [Desktop Entry]
 Type=Application
-Name=$name
+Name=$desk_name
 Comment=Pinned on FreeTVOS
-Exec=/usr/bin/freetvos-webapp $app $url
+Exec=/usr/bin/freetvos-webapp $app $exec_url
 Icon=$icon_ref
 Categories=AudioVideo;Video;
 Terminal=false
@@ -198,8 +243,7 @@ cmd_list() {
   for f in "$PINS_DIR"/*.pin; do
     [ -e "$f" ] || continue
     found=1
-    NAME=""; APP=""; URL=""
-    . "$f"
+    NAME="$(pin_field "$f" NAME)"; APP="$(pin_field "$f" APP)"
     printf '%-22s %-12s %s\n' "$(basename "$f" .pin)" "$APP" "$NAME"
   done
   [ "$found" = 1 ] || echo "no pins"
@@ -207,6 +251,7 @@ cmd_list() {
 
 cmd_remove() {
   local id="${1:-}"; [ -n "$id" ] || die "which pin?"
+  case "$id" in *[!a-z0-9-]*) die "no such pin: $id" ;; esac
   rm -f "$PINS_DIR/$id.pin" "$APPS_DIR/freetvos-pin-$id.desktop"
   rm -f "$ICON_DIR/freetvos-pin-$id".*
   command -v kbuildsycoca6 >/dev/null 2>&1 && kbuildsycoca6 --noincremental >/dev/null 2>&1 || true

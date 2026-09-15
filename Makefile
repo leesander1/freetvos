@@ -68,6 +68,7 @@ lint:
 	@python3 tools/test-livetv.py
 	@python3 tools/test-meet.py
 	@python3 tools/test-tuner.py
+	@python3 tools/test-pin.py
 	@echo "lint ok"
 
 clean:

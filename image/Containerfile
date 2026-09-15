@@ -179,6 +179,7 @@ RUN chmod 0755 /usr/bin/freetvos-webapp /usr/bin/freetvos-firstboot \
               /usr/bin/freetvos-bars \
               /usr/bin/freetvos-livetv /usr/bin/freetvos-livetv-player \
               /usr/bin/freetvos-meet /usr/bin/freetvos-tuner \
+              /usr/bin/freetvos-pin-host \
  && python3 /usr/share/freetvos/generate-desktop-entries.py \
  && python3 /usr/share/freetvos/curate-apps.py \
  && python3 /usr/share/freetvos/brand-os-release.py \

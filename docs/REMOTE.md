@@ -50,6 +50,30 @@ These are bound in `/etc/xdg/kglobalshortcutsrc` to the `XF86Back` and
 tested against a real remote, because the development VM has neither CEC nor an
 infrared receiver.
 
+## Pinning what is on screen
+
+The **favourites** key, the star or heart on remotes that have one, opens the pin
+panel over any streaming service. **P** does the same on a keyboard, or from the
+KDE Connect keyboard on a phone, whenever nothing is being typed.
+
+Not **Menu**, which was the first choice. Plasma Bigscreen binds Menu to its tasks
+overview as a global shortcut, so the compositor takes the key before a page
+ever sees it.
+
+Checked in the VM with a pretend remote made through `/dev/uinput`, the way remote
+handlers inject their keys:
+
+| The remote sends | What happens |
+|---|---|
+| `KEY_BOOKMARKS` | Reaches the page as `BrowserFavorites`, and the panel opens |
+| `KEY_FAVORITES` | Never reaches the browser, although the keymap turns both into the same keysym. Where it is lost was not found |
+| P | The panel opens |
+
+Which of the two a particular remote's favourites key sends, and what the CEC
+handler makes of a television remote's buttons, needs that remote in hand.
+QEMU's own keyboard can send neither, so neither can be tried from the VM's
+window.
+
 ## None of this works in the development VM
 
 Worth knowing before concluding something is broken. KDE Connect, AirPlay and

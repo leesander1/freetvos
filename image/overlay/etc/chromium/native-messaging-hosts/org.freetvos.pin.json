@@ -1,0 +1,9 @@
+{
+  "name": "org.freetvos.pin",
+  "description": "Pins what is on screen to the FreeTVOS home screen",
+  "path": "/usr/bin/freetvos-pin-host",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://llindeglmgojidlmnmhlhcegdeameami/"
+  ]
+}

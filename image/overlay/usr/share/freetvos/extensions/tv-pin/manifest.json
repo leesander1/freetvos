@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "FreeTVOS pin",
+  "version": "1.0",
+  "description": "Pin what is on screen to the home screen, with Menu on the remote",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0pqxpW4rLU62WUDPVvaarBaRrr0IvROWayhf3WF1gbwoIrdiOf7CHbRu/vKF7C+3TwCGdqGUQSz0Z0Zv2hBMt7ciQUwOU30uorhzYQVtsTLAd6dveRw1FHs1Yl88kEt51P2oKsnKyIOzXx9dOCunq3sKO4RDIE9VChBqdBRUdDVXoPcU4sySv86E2skb9Elxrtbt994vQTCuBU4VfNZTH2KPalaQNquqb4hIFP2axOQXIajOfN+pRZ9HZGyJ9okaLpMq0VyYmzv06J3UPiXKVn4rCxXu7uNjjc3z7IXEEJZ19ZLb0tTrus2oCkp6J+4YdDIrA84I+/ZJuvS7KzgozQIDAQAB",
+  "permissions": [
+    "nativeMessaging"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "pin.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ]
+}

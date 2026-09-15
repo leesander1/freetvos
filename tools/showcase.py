@@ -7,6 +7,11 @@ frames come from the hypervisor's framebuffer. Nothing is staged in a browser on
 the host, so every picture is what the television actually draws.
 
   python3 tools/showcase.py stills     one screenshot per feature
+  python3 tools/showcase.py stills pin tickers
+                                       only those, leaving every other picture
+                                       as it is. A few continue from the one
+                                       before them in STILLS, such as
+                                       scores-game after scores: name both.
   python3 tools/showcase.py demo       a GIF of moving around the interface,
                                        ending on two services in split view
 
@@ -50,6 +55,7 @@ STILLS = [
     ("livetv-watching", None, 0, "watch"),
     ("pip", None, 0, "pip"),
     ("meetings", "/usr/bin/freetvos-meet browse", 16, []),
+    ("pin", None, 0, "pin"),
 ]
 
 # Every bar switched on, for the one picture of them, and off again after, so
@@ -172,10 +178,16 @@ def open_surface(command: str, wait: int, unit: str,
     time.sleep(wait)
 
 
-def stills() -> int:
+def stills(only=()) -> int:
+    unknown = set(only) - {name for name, *_ in STILLS}
+    if unknown:
+        print(f"no such still: {', '.join(sorted(unknown))}", file=sys.stderr)
+        return 2
     IMAGES.mkdir(parents=True, exist_ok=True)
     close_everything()
     for n, (name, command, wait, extra) in enumerate(STILLS):
+        if only and name not in only:
+            continue
         if extra == "livetv-source":
             vm(LIVETV_SOURCE)
         if command:
@@ -200,6 +212,16 @@ def stills() -> int:
                "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus "
                "/usr/bin/freetvos-split pip >/dev/null 2>&1")
             time.sleep(6)
+        elif extra == "pin":
+            # The pin panel over a service. YouTube's own start page needs no
+            # account and has a name to pin, and P opens the panel. Launched as
+            # a tile, as split view's are, so the browser outlives the command.
+            close_everything()
+            open_surface("/usr/bin/kioclient exec "
+                         "/usr/share/applications/freetvos-youtube.desktop",
+                         25, f"showcase{n}", keep=True)
+            keys("p")
+            time.sleep(5)
         elif extra == "row-start":
             # Back to the first tile, however far along the row the last
             # person left it. The start of the row is the first impression.
@@ -339,7 +361,7 @@ def main() -> int:
         return 1
     what = sys.argv[1] if len(sys.argv) > 1 else ""
     if what == "stills":
-        return stills()
+        return stills(sys.argv[2:])
     if what == "demo":
         return demo()
     print(__doc__)

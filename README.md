@@ -42,8 +42,8 @@ and `python3 tools/showcase.py demo` take them again.
 | **Choosing stocks.** Search by company, pick from the popular list, and put them in order. | **Picture in picture.** One service full screen and another small in the corner. |
 | ![The Live TV guide](docs/images/livetv-guide.png) | ![Watching a Live TV channel](docs/images/livetv-watching.png) |
 | **Live TV.** A programme guide from Tunarr, an HDHomeRun tuner or a playlist. Full support for USB tuner. The channels here are test patterns. | **Changing channel.** The number, what is on, and what is next. |
-| ![Joining a video call](docs/images/meetings.png) | |
-| **Meetings.** Zoom, Meet and Teams, joined by meeting ID and passcode with the remote. USB camera support. | |
+| ![Joining a video call](docs/images/meetings.png) | ![Pinning a show to the home screen](docs/images/pin.png) |
+| **Meetings.** Zoom, Meet and Teams, joined by meeting ID and passcode with the remote. USB camera support. | **Pin to the home screen.** The favourites key, or P, over whatever is playing puts it on the home screen with its poster. |
 
 ## Why it is built this way
 
@@ -129,6 +129,19 @@ which is the only mechanism that reliably reaches Bigscreen's model.
 A pin is a deep link into a service that already has a tile, with real artwork.
 It runs through that service's own wrapper, so it shares the profile, the user
 agent and the Widevine wiring rather than becoming a half-configured copy.
+
+**From the remote**, press the **favourites** key while the show is on screen,
+or **P** on a keyboard or the KDE Connect phone keyboard. A panel shows its name
+and poster: Enter pins it, and it is on the home screen at the end of
+Applications. On something already pinned, the same key offers to remove it.
+Which remotes' favourites keys reach it is in `docs/REMOTE.md`.
+
+The page's own name and poster are used, which on a service you are signed in to
+is better than anything looked up from outside. What the page cannot choose is
+where the pin goes: the address comes from the browser, and the service from the
+browser window it is running in.
+
+From a terminal:
 
 ```bash
 freetvos-pin add --name "Stranger Things" --app netflix \

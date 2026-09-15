@@ -16,6 +16,19 @@ One caveat worth re-checking after a Chromium update. Google disabled
 Chromium 152 build still honours it, verified by loading a probe extension and
 watching it run, but that is a thing that could change under you.
 
+## The two that ship
+
+`tv-focus` draws a focus ring a television can see, and a border around the pane
+in focus in split view.
+
+`tv-pin` is the pin key: the favourites key on a remote, or P, opens a panel that
+pins the show on screen to the home screen. It is the only extension here with a permission,
+`nativeMessaging`, which lets it start one program:
+`/usr/bin/freetvos-pin-host`, registered in
+`/etc/chromium/native-messaging-hosts/org.freetvos.pin.json`. The registration
+names the extension by ID, and the ID is fixed by the public key in its manifest,
+so no other extension can start the helper.
+
 ## On the "force 1080p" extensions
 
 The honest position, because the internet is confident about this and the
