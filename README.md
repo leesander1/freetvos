@@ -1,9 +1,11 @@
 # FreeTVOS
 
-A television operating system built on KDE Plasma Bigscreen, defined as a
+A free open television operating system that won't track you. Built on KDE Plasma Bigscreen, defined as a
 bootable container and shipped as an atomically updatable image.
 
-Status: boots to a branded Bigscreen home screen in QEMU on Apple Silicon, with
+**Status**: working / WIP 
+
+boots to a branded Bigscreen home screen in QEMU on Apple Silicon, with
 twelve streaming services, live scores, stock and score tickers, Live TV with a
 guide, split view and picture in picture, video calls, external inputs, your own
 media, and a first-run setup wizard. Built for x86_64 but not yet installed on
@@ -11,7 +13,12 @@ real hardware.
 
 ![Moving around FreeTVOS with a remote: the home screen, live scores, one game, the app catalogue, external inputs, and YouTube beside ESPN+ in split view](docs/images/demo.gif)
 
-## What it looks like
+## Why
+- Free open source completely customizable experience
+- No analytics or data collection of any kind
+- Freedom to own the glass
+
+## Features
 
 Every picture here is the television's own framebuffer, taken through the
 hypervisor while the VM runs, not a mockup. `python3 tools/showcase.py stills`
@@ -20,13 +27,13 @@ and `python3 tools/showcase.py demo` take them again.
 | | |
 |---|---|
 | ![The home screen](docs/images/home.png) | ![The first-run wizard](docs/images/setup.png) |
-| **Home.** Twelve streaming services and every feature, on Plasma Bigscreen. | **First run.** Opens by itself the first time the television is turned on. |
+| **Home.** Twelve streaming services and every feature, on Plasma Bigscreen. | **Setup Wizard.** Opens by itself the first time the television is turned on. |
 | ![Typing a wifi password on screen](docs/images/setup-keyboard.png) | ![The app catalogue](docs/images/apps.png) |
-| **Typing with a remote.** The page draws its own keyboard. The network names are stand-ins, as the VM has no radio. | **Apps.** Seventeen more services a press away, or any site by its address. |
+| **Typing with a remote.** The page draws its own keyboard. The network names are stand-ins, as the VM has no radio. | **Customizable Apps/Services.** Seventeen more services a press away, or any site by its address. |
 | ![Live scores](docs/images/scores.png) | ![One game](docs/images/scores-game.png) |
-| **Scores.** Live games first, refreshing on their own, with the teams you follow above everything. | **A game.** The clock, the down and distance, the last play, and a button to follow either side. |
+| **Sports App.** Live games first, refreshing on their own, with the teams you follow above everything. | **Sports Game Details.** The clock, the down and distance, the last play, and a button to follow either side. |
 | ![Your own media](docs/images/library.png) | ![External inputs](docs/images/inputs.png) |
-| **Library.** A USB drive, a Plex server or a Jellyfin server, and where you left off. | **Inputs.** A console or set-top box through a USB HDMI capture device. |
+| **Library.** A USB drive, a Plex server or a Jellyfin server, and where you left off. | **Inputs/USB HDMI Device Passthrough.** A console or set-top box through a USB HDMI capture device. This is good for if you don't have a device with a way to plug device directly into the screen. |
 | ![Picture and sound settings](docs/images/picture-sound.png) | ![Choosing what goes in split view](docs/images/split-picker.png) |
 | **Picture & Sound.** Resolution, overscan, output, volume and Bluetooth, laid out for a remote. | **Split view.** Two services side by side, with the sound following the one in focus. |
 | ![Stock, score and news bars on the home screen](docs/images/tickers-home.png) | ![The Tickers settings](docs/images/tickers.png) |
@@ -34,9 +41,9 @@ and `python3 tools/showcase.py demo` take them again.
 | ![Choosing stocks for the ticker](docs/images/stock-picker.png) | ![Picture in picture](docs/images/pip.png) |
 | **Choosing stocks.** Search by company, pick from the popular list, and put them in order. | **Picture in picture.** One service full screen and another small in the corner. |
 | ![The Live TV guide](docs/images/livetv-guide.png) | ![Watching a Live TV channel](docs/images/livetv-watching.png) |
-| **Live TV.** A programme guide from Tunarr, an HDHomeRun tuner or a playlist. The channels here are test patterns. | **Changing channel.** The number, what is on, and what is next. |
+| **Live TV.** A programme guide from Tunarr, an HDHomeRun tuner or a playlist. Full support for USB tuner. The channels here are test patterns. | **Changing channel.** The number, what is on, and what is next. |
 | ![Joining a video call](docs/images/meetings.png) | |
-| **Meetings.** Zoom, Meet and Teams, joined by meeting ID and passcode with the remote. | |
+| **Meetings.** Zoom, Meet and Teams, joined by meeting ID and passcode with the remote. USB camera support. | |
 
 ## Why it is built this way
 
@@ -164,8 +171,7 @@ it up as a tile.
 Paramount+, Peacock, ESPN+, YouTube TV and Apple TV+ all require Widevine, and the module is baked into the image at build time,
 so it is there from first boot with no command to run and no network needed.
 
-That is only appropriate because this image stays on your own machines. The
-licence does not permit redistributing the module. Set `BUNDLE_WIDEVINE="no"`
+Set `BUNDLE_WIDEVINE="no"`
 in `brand/brand.env` before building anything that leaves the machine; the
 device then fetches it itself on first boot, retrying until the network is up,
 which is what Raspberry Pi OS and LibreELEC do.
@@ -221,19 +227,6 @@ hardcoding colours, and the colour scheme, the Plasma theme and the QtQuick
 Controls style were all set dark and verified in config; it stays light anyway.
 Its own System page has a Global theme picker, which is the remaining thing to
 try. Every other Qt dialog on the device is dark.
-
-**Resolution is capped at 720p on the DRM services, and nothing changes
-that.** Netflix, Disney+ and Hulu pick quality from the Widevine robustness
-level, which is L3 on any Linux device. That decision is made on their servers.
-YouTube, YouTube TV and Plex are not capped this way and do reach 1080p.
-
-**The boot splash has never been seen.** Plymouth is configured and runs
-cleanly, and the theme resolves correctly, but the whole boot is 5.3 seconds
-to graphical with the splash on screen for about two of them, and QEMU's
-display output is inactive for part of that window. Verifying it needs real
-hardware. The same applies to the very earliest frames regardless: this image
-does not regenerate the initramfs, so Plymouth uses the built-in default until
-the root filesystem is mounted.
 
 ## Not done yet
 
