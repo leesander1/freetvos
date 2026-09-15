@@ -181,6 +181,7 @@ RUN chmod 0755 /usr/bin/freetvos-webapp /usr/bin/freetvos-firstboot \
       /usr/share/wallpapers/FreeTVOS/contents/images/1920x1080.png 1920 1080 \
  && ln -sfn FreeTVOS /usr/share/wallpapers/Default \
  && python3 /usr/share/freetvos/tune-shell-defaults.py \
+ && python3 /usr/share/freetvos/tune-homescreen.py \
  && cp /usr/share/plymouth/themes/freetvos/logo.png \
       /usr/share/plasma/look-and-feel/org.freetvos.bigscreen/contents/splash/images/logo.png \
  && gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
