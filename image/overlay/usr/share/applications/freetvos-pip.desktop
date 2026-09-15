@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Picture in Picture
+Comment=One service full screen and another small in a corner
+Exec=/usr/bin/freetvos-split pip pick
+Icon=freetvos-pip
+Categories=AudioVideo;Video;
+Terminal=false
+StartupNotify=false
+X-KDE-FormFactor=tv

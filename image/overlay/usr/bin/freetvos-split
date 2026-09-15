@@ -9,6 +9,10 @@
 #   freetvos-split next   move focus, and the sound, to the next pane
 #   freetvos-split launch <id>   open a saved combo and tile it
 #   freetvos-split list   show which services are on screen
+#   freetvos-split pip [pick]   one big and one small picture; pick asks which
+#   freetvos-split pip-swap     swap the big and small pictures
+#   freetvos-split pip-corner   move the small picture to the next corner
+#   freetvos-split pip-off      back to one picture
 #
 # The same shortcuts work directly from a keyboard: Ctrl+Alt+1, 2, 4 and Tab.
 #
@@ -54,6 +58,11 @@ running_apps() {
   for pid in $(pgrep -f -- "--input-ipc-server=.*freetvos/hdmi-ipc.sock" \
                2>/dev/null || true); do
     echo "freetvos-hdmi $pid"
+  done
+  # Live TV is an mpv window too, found the same way.
+  for pid in $(pgrep -f -- "--input-ipc-server=.*freetvos/livetv-ipc.sock" \
+               2>/dev/null || true); do
+    echo "freetvos-livetv $pid"
   done
   } | sort -u -k2,2n
 }
@@ -240,6 +249,69 @@ case "${1:-}" in
       *) invoke_shortcut "FreeTVOS Two Panes" ;;
     esac
     audio_follow_active 0
+    ;;
+  pip|pip-swap|pip-corner|pip-off)
+    big_file="$STATE_DIR/pip-big"
+    if [ "$1" = "pip" ]; then
+      big_app=""
+      if [ "${2:-}" = "pick" ]; then
+        # Same picker as split view, asking for the big picture then the small.
+        pkill -f -- "--class=freetvos-picker" 2>/dev/null || true
+        pkill -f "/usr/bin/freetvos-pick" 2>/dev/null || true
+        sleep 1
+        out="$(FREETVOS_PICK_MODE=pip /usr/bin/freetvos-pick || true)"
+        [ -n "$out" ] || exit 0
+        apps="$(printf '%s\n' "$out" | head -1)"
+        for app in $apps; do
+          if ! is_running "$app"; then
+            FREETVOS_QUIET=1 setsid /usr/bin/freetvos-webapp "$app" \
+              >"$STATE_DIR/launch-$app.log" 2>&1 < /dev/null &
+          fi
+        done
+        for _ in $(seq 1 120); do
+          [ "$(running_apps | wc -l | tr -d ' ')" -ge 2 ] && break
+          sleep 0.5
+        done
+        sleep 2
+        big_app="freetvos-${apps%% *}"
+      fi
+      mapfile -t panes < <(running_apps)
+      if [ "${#panes[@]}" -lt 2 ]; then
+        echo "Picture in picture needs two things on screen." >&2
+        command -v kdialog >/dev/null 2>&1 && kdialog --title "Picture in Picture" \
+          --sorry "Open a second service first. Picture in picture needs two." &
+        exit 3
+      fi
+      # The script orders panes by process id, as running_apps does, so the
+      # position here is the position there.
+      index=0
+      [ -n "$big_app" ] && [ "${panes[1]%% *}" = "$big_app" ] && index=1
+      rm -f "$STATE_DIR/split-on"
+      if [ "$index" = 1 ]; then
+        invoke_shortcut "FreeTVOS PiP Second Big"
+      else
+        invoke_shortcut "FreeTVOS PiP First Big"
+      fi
+      echo "${panes[$index]##* }" > "$big_file"
+    elif [ "$1" = "pip-swap" ]; then
+      invoke_shortcut "FreeTVOS Swap Picture"
+      mapfile -t panes < <(running_apps)
+      was="$(cat "$big_file" 2>/dev/null || true)"
+      for pane in "${panes[@]:0:2}"; do
+        [ "${pane##* }" != "$was" ] && echo "${pane##* }" > "$big_file" && break
+      done
+    elif [ "$1" = "pip-corner" ]; then
+      invoke_shortcut "FreeTVOS Move Picture"
+    else
+      invoke_shortcut "FreeTVOS Picture In Picture"
+    fi
+    # Whichever picture is big has the remote, and gets the sound.
+    big_pid="$(cat "$big_file" 2>/dev/null || true)"
+    if [ -n "$big_pid" ]; then
+      app="$(running_apps | awk -v p="$big_pid" '$2 == p {print $1}' | head -1)"
+      route_audio_to "$big_pid" "$app"
+      [ "$1" = "pip-off" ] && rm -f "$big_file"
+    fi
     ;;
   list) running_apps ;;
   *) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;

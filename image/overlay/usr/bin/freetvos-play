@@ -48,6 +48,9 @@ def build_argv(args) -> list:
         # fallback: no window appears at all.
         "--vo=gpu-next,gpu,wlshm",
         "--gpu-context=wayland",
+        # Let the GPU output use a software renderer rather than refusing it,
+        # which is better looking than dropping to the last output.
+        "--gpu-sw=yes",
         "--hwdec=auto-safe",
 
         # Start again where you stopped, and write the position often enough

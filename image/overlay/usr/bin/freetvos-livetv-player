@@ -1,0 +1,235 @@
+#!/usr/bin/env python3
+"""Watching a channel: flip up and down, type a number, see what is on.
+
+mpv is started once and told what to play over its IPC socket, the same way the
+external-input viewer works. Changing channel is a new address handed to the
+same player rather than a new player, so the screen does not drop back to the
+home screen between channels, which on a television reads as a crash.
+
+Keys arrive from mpv as messages rather than being bound to mpv's own commands,
+because what a channel change means (which channel is next, what is on it,
+remembering it for next time) lives here and not in the player.
+"""
+import argparse
+import datetime as dt
+import json
+import os
+import queue
+import signal
+import socket
+import subprocess
+import sys
+import threading
+import time
+from pathlib import Path
+
+INPUT_CONF = os.environ.get("FREETVOS_LIVETV_INPUT",
+                            "/usr/share/freetvos/livetv/input.conf")
+LIVETV_CMD = os.environ.get("FREETVOS_LIVETV_CMD", "/usr/bin/freetvos-livetv")
+
+NUMBER_WAIT = 1.6
+
+
+def load_channels(path: str) -> list:
+    data = json.loads(Path(path).read_text())
+    for channel in data.get("channels", []):
+        for show in channel.get("shows", []):
+            show["start"] = dt.datetime.fromisoformat(show["start"])
+            show["stop"] = dt.datetime.fromisoformat(show["stop"])
+    return data.get("channels", [])
+
+
+def on_now(shows: list, now: dt.datetime) -> tuple:
+    for i, show in enumerate(shows or []):
+        if show["start"] <= now < show["stop"]:
+            return show, (shows[i + 1] if i + 1 < len(shows) else None)
+        if show["start"] > now:
+            return None, show
+    return None, None
+
+
+def banner(channel: dict, now: dt.datetime) -> str:
+    """The line shown on a channel change: number, name, and what is on."""
+    head = f"{channel.get('number', '')}  {channel.get('name', '')}".strip()
+    current, upcoming = on_now(channel.get("shows"), now)
+    lines = [head]
+    if current:
+        until = current["stop"].astimezone().strftime("%-I:%M")
+        lines.append(f"{current['title']}  until {until}")
+    if upcoming:
+        at = upcoming["start"].astimezone().strftime("%-I:%M")
+        lines.append(f"Next: {upcoming['title']} at {at}")
+    return "\n".join(lines)
+
+
+def remember(channel: dict) -> None:
+    """Tell the command which channel this is, for next time."""
+    try:
+        subprocess.run([sys.executable, LIVETV_CMD, "remember-last",
+                        json.dumps(channel)], timeout=10,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def connect(path: Path, timeout: float = 15.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            s.connect(str(path))
+            return s
+        except OSError:
+            time.sleep(0.2)
+    return None
+
+
+def reader(sock, events) -> None:
+    buffer = b""
+    try:
+        while True:
+            chunk = sock.recv(65536)
+            if not chunk:
+                break
+            buffer += chunk
+            while b"\n" in buffer:
+                line, buffer = buffer.split(b"\n", 1)
+                try:
+                    events.put(json.loads(line))
+                except ValueError:
+                    pass
+    except OSError:
+        pass
+    events.put({"event": "disconnected"})
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(prog="freetvos-livetv-player")
+    parser.add_argument("--channels", required=True)
+    parser.add_argument("--start", type=int, default=0)
+    args = parser.parse_args()
+
+    channels = load_channels(args.channels)
+    if not channels:
+        print("no channels to play", file=sys.stderr)
+        return 1
+    index = min(max(args.start, 0), len(channels) - 1)
+
+    runtime = Path(os.environ.get("XDG_RUNTIME_DIR",
+                                  f"/run/user/{os.getuid()}")) / "freetvos"
+    runtime.mkdir(parents=True, exist_ok=True)
+    sock_path = runtime / "livetv-ipc.sock"
+    try:
+        sock_path.unlink()
+    except OSError:
+        pass
+
+    proc = subprocess.Popen([
+        "mpv", "--no-config",
+        # Outputs that stay on Wayland, and software rendering allowed. With
+        # no usable GPU, mpv's default is to reject the software renderer and
+        # try the next output down its list until it reaches X11, which on
+        # this session aborts the whole player on an assertion. That took
+        # Live TV straight back to the home screen in the VM, and would do
+        # the same on any box whose GPU driver fails to load.
+        "--vo=gpu-next,gpu,wlshm", "--gpu-context=wayland", "--gpu-sw=yes",
+        f"--input-conf={INPUT_CONF}", "--input-default-bindings=no",
+        f"--input-ipc-server={sock_path}",
+        "--idle=yes", "--force-window=yes", "--fullscreen=yes",
+        "--keep-open=no", "--no-osc", "--osd-bar=no",
+        "--cursor-autohide=always", "--title=FreeTVOS Live TV",
+        # A few seconds of buffer. Live TV over a network stutters without
+        # one, and unlike the capture viewer nobody is playing a game through
+        # this, so the latency costs nothing.
+        "--cache=yes", "--cache-secs=8", "--demuxer-readahead-secs=4",
+        "--hwdec=auto-safe",
+        # Loop a stream that ends. A real channel never ends; a server that
+        # hands out a finite file per channel, as test servers do, would
+        # otherwise drop to a black screen.
+        "--loop-file=inf",
+        # Top left, not bottom left. The bars along the bottom of the screen
+        # sit above every window, and at the bottom they covered everything
+        # in the channel banner except the channel's name.
+        "--osd-duration=5000", "--osd-align-x=left", "--osd-align-y=top",
+        "--osd-margin-x=60", "--osd-margin-y=60", "--osd-font-size=44",
+    ])
+
+    def stop(*_a):
+        if proc.poll() is None:
+            proc.terminate()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+
+    sock = connect(sock_path)
+    if sock is None:
+        proc.terminate()
+        return 1
+    events: queue.Queue = queue.Queue()
+    threading.Thread(target=reader, args=(sock, events), daemon=True).start()
+
+    def send(*command):
+        try:
+            sock.sendall(json.dumps({"command": list(command)}).encode() + b"\n")
+        except OSError:
+            pass
+
+    def tune(to: int):
+        nonlocal index
+        index = to % len(channels)
+        channel = channels[index]
+        send("loadfile", channel["url"])
+        send("show-text", banner(channel, dt.datetime.now(dt.timezone.utc)), 5000)
+        remember({k: channel.get(k, "") for k in ("number", "name", "url")})
+
+    tune(index)
+    typed, typed_at = "", 0.0
+
+    try:
+        while proc.poll() is None:
+            if typed and time.time() - typed_at > NUMBER_WAIT:
+                target = next((i for i, c in enumerate(channels)
+                               if c.get("number") == typed), -1)
+                if target >= 0:
+                    tune(target)
+                else:
+                    send("show-text", f"No channel {typed}", 2500)
+                typed = ""
+            try:
+                message = events.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            event = message.get("event")
+            if event in ("shutdown", "disconnected"):
+                break
+            if event != "client-message":
+                continue
+            words = message.get("args") or []
+            if not words or words[0] != "freetvos":
+                continue
+            action = words[1] if len(words) > 1 else ""
+            if action == "up":
+                tune(index + 1)
+            elif action == "down":
+                tune(index - 1)
+            elif action == "info":
+                send("show-text", banner(channels[index],
+                                         dt.datetime.now(dt.timezone.utc)), 6000)
+            elif action == "digit" and len(words) > 2:
+                typed = (typed + words[2])[-4:]
+                typed_at = time.time()
+                send("show-text", typed, 2000)
+            elif action == "guide":
+                send("quit", 4)
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+    # mpv's exit status says why it stopped: 4 is the guide key, which returns
+    # to the guide rather than to the home screen.
+    code = proc.wait()
+    return 4 if code == 4 else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

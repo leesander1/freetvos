@@ -1,0 +1,7 @@
+NAME="Microsoft Teams"
+URL="https://teams.microsoft.com/"
+ICON="freetvos-meet"
+CATEGORY="Network;VideoConference;"
+DRM="no"
+HIDDEN="yes"
+SPATIAL_NAV="yes"

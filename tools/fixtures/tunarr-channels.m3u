@@ -1,0 +1,7 @@
+#EXTM3U url-tvg="http://tunarr.lan:8000/api/xmltv.xml" x-tvg-url="http://tunarr.lan:8000/api/xmltv.xml"
+#EXTINF:-1 tvg-id="C1.tunarr.com" channel-id="C1.tunarr.com" CUID="C1.tunarr.com" tvg-chno="1" tvg-name="Saturday Cartoons" tvg-logo="http://tunarr.lan:8000/images/tunarr.png" group-title="Tunarr",Saturday Cartoons
+http://tunarr.lan:8000/stream/channels/6f1c0e2a-1111-4c3a-9b1e-000000000001?streamMode=hls
+#EXTINF:-1 tvg-id="C2.tunarr.com" channel-id="C2.tunarr.com" CUID="C2.tunarr.com" tvg-chno="2" tvg-name="Movie Night, Classics" tvg-logo="http://tunarr.lan:8000/images/tunarr.png" group-title="Movies",Movie Night, Classics
+http://tunarr.lan:8000/stream/channels/6f1c0e2a-2222-4c3a-9b1e-000000000002?streamMode=hls
+#EXTINF:-1 tvg-id="C10.tunarr.com" channel-id="C10.tunarr.com" CUID="C10.tunarr.com" tvg-chno="10" tvg-name="Sitcoms" group-title="Tunarr",Sitcoms
+http://tunarr.lan:8000/stream/channels/6f1c0e2a-3333-4c3a-9b1e-000000000010?streamMode=hls

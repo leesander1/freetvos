@@ -4,7 +4,8 @@ A television operating system built on KDE Plasma Bigscreen, defined as a
 bootable container and shipped as an atomically updatable image.
 
 Status: boots to a branded Bigscreen home screen in QEMU on Apple Silicon, with
-twelve streaming services, live scores, split view, external inputs, your own
+twelve streaming services, live scores, stock and score tickers, Live TV with a
+guide, split view and picture in picture, video calls, external inputs, your own
 media, and a first-run setup wizard. Built for x86_64 but not yet installed on
 real hardware.
 
@@ -77,6 +78,10 @@ ssh -p 2222 tv@localhost
 | `docs/EXTRAS.md` | Picture, sound, Bluetooth and game streaming |
 | `docs/SCORES.md` | Live scores, and the ESPN feed behind them |
 | `docs/SETUP.md` | The first-run wizard, and typing on a television |
+| `docs/TICKERS.md` | Stock, score and custom bars along the bottom of the screen |
+| `docs/LIVETV.md` | Channels and a guide from Tunarr, a tuner or a playlist |
+| `docs/PIP.md` | One service full screen and another small in a corner |
+| `docs/MEETINGS.md` | Zoom, Meet and Teams calls, and what is verified about the camera |
 | `docs/INSTALL.md` | Getting it onto real x86_64 hardware |
 
 ## First run

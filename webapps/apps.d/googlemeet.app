@@ -1,0 +1,7 @@
+NAME="Google Meet"
+URL="https://meet.google.com/"
+ICON="freetvos-meet"
+CATEGORY="Network;VideoConference;"
+DRM="no"
+HIDDEN="yes"
+SPATIAL_NAV="yes"

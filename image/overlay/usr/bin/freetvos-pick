@@ -45,7 +45,13 @@ def services() -> list[dict]:
         except OSError:
             continue
         for f in files:
-            name = re.search(r'^NAME="([^"]*)"', f.read_text(), re.M)
+            text = f.read_text()
+            # A service that is only ever opened by something else, such as a
+            # video call opened by Meetings, is not a pane anyone chooses.
+            if re.search(r'^HIDDEN="yes"', text, re.M):
+                found.pop(f.stem, None)
+                continue
+            name = re.search(r'^NAME="([^"]*)"', text, re.M)
             found[f.stem] = {"id": f.stem,
                              "name": name.group(1) if name else f.stem}
     return [found[k] for k in sorted(found)]
@@ -109,8 +115,11 @@ SERVICES.forEach((s, i) => {
 });
 
 function render() {
-  [...grid.children].forEach((el, i) =>
-    el.classList.toggle('sel', stage < 2 && i === index));
+  [...grid.children].forEach((el, i) => {
+    el.classList.toggle('sel', stage < 2 && i === index);
+    // Already chosen for the other pane: shown, but faded.
+    el.style.opacity = stage === 1 && picked.includes(SERVICES[i].id) ? '0.35' : '';
+  });
   grid.hidden = stage === 2;
   actions.hidden = stage !== 2;
   saveBtn.classList.toggle('sel', stage === 2 && actionIndex === 0);
@@ -143,6 +152,14 @@ addEventListener('keydown', e => {
     else if (e.key === 'ArrowDown') index = Math.min(SERVICES.length - 1, index + cols);
     else if (e.key === 'ArrowUp') index = Math.max(0, index - cols);
     else if (e.key === 'Enter') {
+      // One service is one window, so it cannot fill both panes. Choosing it
+      // twice gave split view and picture in picture a layout with one window
+      // in it.
+      if (picked.includes(SERVICES[index].id)) {
+        step.textContent = SERVICES[index].name + ' is already chosen';
+        e.preventDefault();
+        return;
+      }
       picked.push(SERVICES[index].id);
       stage += 1;
       index = 0;
@@ -182,7 +199,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlparse(self.path).path
         if path == "/":
-            page = PAGE.replace("__SERVICES__", json.dumps(services()))
+            page = page_text().replace("__SERVICES__", json.dumps(services()))
             self._send(200, page.encode())
             return
         if path.startswith("/icon/"):
@@ -216,6 +233,31 @@ def free_port() -> int:
     port = s.getsockname()[1]
     s.close()
     return port
+
+
+# Split view asks for a left and a right pane. Picture in picture asks the
+# same question with different words, and has no quick-launch tile to save.
+MODE = os.environ.get("FREETVOS_PICK_MODE", "split")
+
+WORDING = {
+    "pip": [
+        ("<title>Split View</title>", "<title>Picture in Picture</title>"),
+        ("<h1>Split View</h1>", "<h1>Picture in Picture</h1>"),
+        ('<p class="step" id="step">Choose the left pane</p>',
+         '<p class="step" id="step">Choose the big picture</p>'),
+        ("'Choose the left pane'", "'Choose the big picture'"),
+        ("'Choose the right pane'", "'Choose the small picture'"),
+        ("(i === 0 ? 'Left: ' : 'Right: ')", "(i === 0 ? 'Big: ' : 'Small: ')"),
+        ('<div class="btn" id="save">', '<div class="btn" id="save" hidden>'),
+    ],
+}
+
+
+def page_text() -> str:
+    page = PAGE
+    for old, new in WORDING.get(MODE, []):
+        page = page.replace(old, new)
+    return page
 
 
 def main() -> int:

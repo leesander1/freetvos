@@ -1,0 +1,220 @@
+#!/usr/bin/env python3
+"""Video calls on the television: Zoom, Google Meet and Microsoft Teams.
+
+All three run in the browser, which is the only form any of them ships for an
+ARM Linux box, and joining is the part a remote makes hard. So this asks for
+the meeting ID and passcode, which is what an invitation says, and builds the
+address itself.
+
+  freetvos-meet browse                           the page, which is what the tile opens
+  freetvos-meet join zoom 812 3456 7890 [--passcode X]
+  freetvos-meet join meet abc-defg-hij
+  freetvos-meet join teams 123 456 789 012 --passcode X
+  freetvos-meet join URL                         a pasted invitation link
+  freetvos-meet devices                          the cameras and microphones it can see
+
+The camera and microphone are allowed for these three services by a Chromium
+policy shipped with the image, because the permission prompt a browser shows
+needs a pointer to answer, and a television has none.
+"""
+import argparse
+import os
+import re
+import subprocess
+import sys
+import urllib.parse
+from pathlib import Path
+
+WEBAPP = os.environ.get("FREETVOS_WEBAPP", "/usr/bin/freetvos-webapp")
+SYS = Path(os.environ.get("FREETVOS_MEET_SYSFS", "/sys"))
+
+SERVICES = {
+    "zoom": {"name": "Zoom", "app": "zoom"},
+    "meet": {"name": "Google Meet", "app": "googlemeet"},
+    "teams": {"name": "Microsoft Teams", "app": "teams"},
+}
+
+
+class JoinError(ValueError):
+    pass
+
+
+def _digits(text: str) -> str:
+    return re.sub(r"\D", "", text or "")
+
+
+def meet_code(text: str) -> str:
+    """A Meet code in its canonical form, abc-defg-hij.
+
+    People read codes aloud and type them however they heard them: with
+    spaces, without hyphens, in capitals. Ten letters is a code whatever the
+    punctuation.
+    """
+    letters = re.sub(r"[^a-z]", "", (text or "").lower())
+    if len(letters) != 10:
+        raise JoinError("A Meet code has ten letters, such as abc-defg-hij.")
+    return f"{letters[:3]}-{letters[3:7]}-{letters[7:]}"
+
+
+def join_url(service: str, meeting: str, passcode: str = "") -> str:
+    """The address that joins a meeting in the browser, from what an invite says."""
+    service = (service or "").lower()
+    passcode = (passcode or "").strip()
+    if service == "zoom":
+        number = _digits(meeting)
+        if not 9 <= len(number) <= 11:
+            raise JoinError("A Zoom meeting ID is nine to eleven digits.")
+        url = f"https://app.zoom.us/wc/join/{number}"
+        # The browser client reads the passcode from pwd, and asks for it on
+        # the page when there is none, so leaving it off still works.
+        return url + (f"?pwd={urllib.parse.quote(passcode)}" if passcode else "")
+    if service == "meet":
+        return f"https://meet.google.com/{meet_code(meeting)}"
+    if service == "teams":
+        number = _digits(meeting)
+        if not 9 <= len(number) <= 15:
+            raise JoinError("A Teams meeting ID is on the invitation, "
+                            "usually twelve digits.")
+        if not passcode:
+            raise JoinError("Teams meetings joined by ID need the passcode "
+                            "from the invitation too.")
+        return (f"https://teams.microsoft.com/meet/{number}"
+                f"?p={urllib.parse.quote(passcode)}")
+    raise JoinError("Choose Zoom, Meet or Teams.")
+
+
+# The addresses a pasted invitation can use. Anything else is refused rather
+# than opened, because this browser profile has the camera switched on.
+INVITE_HOSTS = {
+    "zoom": re.compile(r"(^|\.)zoom\.us$"),
+    "meet": re.compile(r"^meet\.google\.com$"),
+    "teams": re.compile(r"^teams\.(microsoft|live)\.com$"),
+}
+
+
+def from_invite(link: str) -> tuple:
+    """(service, address to open) from a link copied out of an invitation.
+
+    A Zoom invite links to zoom.us/j/ID, which tries to hand off to a desktop
+    app that does not exist here; it is rewritten to the browser client.
+    """
+    link = (link or "").strip()
+    if "://" not in link:
+        link = "https://" + link
+    parsed = urllib.parse.urlparse(link)
+    host = (parsed.hostname or "").lower()
+    for service, pattern in INVITE_HOSTS.items():
+        if not pattern.search(host):
+            continue
+        if service == "zoom":
+            m = re.search(r"/(?:j|wc(?:/join)?|s)/(\d{9,11})", parsed.path)
+            if not m:
+                raise JoinError("That Zoom link has no meeting ID in it.")
+            pwd = urllib.parse.parse_qs(parsed.query).get("pwd", [""])[0]
+            return service, join_url("zoom", m.group(1), pwd)
+        return service, urllib.parse.urlunparse(parsed._replace(scheme="https"))
+    raise JoinError("That is not a Zoom, Meet or Teams link.")
+
+
+# ---------------------------------------------------------------------------
+# Hardware.
+# ---------------------------------------------------------------------------
+
+
+def cameras() -> list:
+    """Video devices that look like cameras rather than capture dongles.
+
+    The external-input feature claims HDMI capture devices; a call wants the
+    other kind. Both are the same class of device to the kernel, so this goes
+    by the device's own name.
+    """
+    out = []
+    for node in sorted((SYS / "class/video4linux").glob("video*")):
+        try:
+            name = (node / "name").read_text().strip()
+            index = (node / "index").read_text().strip()
+        except OSError:
+            continue
+        if index != "0":
+            continue                  # metadata nodes share a name with the camera
+        if re.search(r"hdmi|capture|usb3\. ?0|cam ?link", name, re.I):
+            continue
+        out.append(name)
+    return out
+
+
+def microphones() -> list:
+    try:
+        text = Path("/proc/asound/cards").read_text()
+    except OSError:
+        return []
+    return [m.group(1).strip() for m in re.finditer(r"^\s*\d+ \[[^\]]+\]:\s*(.+)$",
+                                                     text, re.M)]
+
+
+# ---------------------------------------------------------------------------
+# Commands.
+# ---------------------------------------------------------------------------
+
+
+def open_call(service: str, url: str) -> int:
+    app = SERVICES[service]["app"]
+    argv = [WEBAPP, app, url]
+    os.execv(argv[0], argv)
+    return 0
+
+
+def cmd_join(args) -> int:
+    try:
+        if args.service.lower() in SERVICES:
+            meeting = " ".join(args.meeting)
+            url = join_url(args.service, meeting, args.passcode or "")
+            service = args.service.lower()
+        else:
+            service, url = from_invite(" ".join([args.service] + args.meeting))
+    except JoinError as exc:
+        print(exc, file=sys.stderr)
+        return 2
+    if args.print:
+        print(url)
+        return 0
+    return open_call(service, url)
+
+
+def cmd_devices(_args) -> int:
+    found = cameras()
+    print("cameras:     " + (", ".join(found) if found else "none"))
+    mics = microphones()
+    print("microphones: " + (", ".join(mics) if mics else "none"))
+    return 0 if found else 1
+
+
+def cmd_browse(_args) -> int:
+    sys.path.insert(0, "/usr/share/freetvos")
+    import meetui
+    return meetui.run(sys.modules[__name__])
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        prog="freetvos-meet", description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="cmd")
+    sub.add_parser("browse").set_defaults(func=cmd_browse)
+    sub.add_parser("devices").set_defaults(func=cmd_devices)
+    p = sub.add_parser("join")
+    p.add_argument("service", help="zoom, meet, teams, or an invitation link")
+    p.add_argument("meeting", nargs="*")
+    p.add_argument("--passcode")
+    p.add_argument("--print", action="store_true",
+                   help="print the address instead of opening it")
+    p.set_defaults(func=cmd_join)
+    args = parser.parse_args()
+    if not args.cmd:
+        parser.print_help()
+        return 2
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

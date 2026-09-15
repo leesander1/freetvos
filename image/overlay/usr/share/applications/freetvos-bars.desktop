@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Tickers
+Comment=Stock prices, live scores and your own message along the bottom of the screen
+Exec=/usr/bin/freetvos-bars settings
+Icon=freetvos-bars
+Categories=Settings;
+Terminal=false
+StartupNotify=true
+X-KDE-FormFactor=tv

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Meetings
+Comment=Join a Zoom, Google Meet or Microsoft Teams call
+Exec=/usr/bin/freetvos-meet browse
+Icon=freetvos-meet
+Categories=Network;VideoConference;
+Terminal=false
+StartupNotify=true
+X-KDE-FormFactor=tv

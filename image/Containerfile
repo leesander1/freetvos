@@ -5,6 +5,15 @@
 # ISO, all from this one definition. Updates are atomic with rollback, which is
 # what a set-top box wants and what a package manager cannot give it.
 ARG BASE_IMAGE=quay.io/fedora/fedora-bootc:44
+
+# The qml runtime, and only that. The bars at the bottom of the screen are a QML
+# overlay, and the one program that runs a QML file ships in Qt's development
+# package, which pulls in compilers and cmake. Installing it here and copying
+# out the single binary keeps all of that out of the television.
+FROM ${BASE_IMAGE} AS qmlruntime
+RUN dnf install -y --setopt=install_weak_deps=False qt6-qtdeclarative-devel \
+ && dnf clean all
+
 FROM ${BASE_IMAGE}
 
 ARG BRAND_ID=freetvos
@@ -140,6 +149,8 @@ COPY cast/dial/ /usr/share/freetvos/dial/
 # it stays sharp on a 4K panel, and it needs no rasteriser in the build.
 COPY brand/icons/ /usr/share/icons/hicolor/scalable/apps/
 
+COPY --from=qmlruntime /usr/lib64/qt6/bin/qml /usr/lib64/qt6/bin/qml
+
 COPY tools/vendor/widevine_patch.py /usr/share/freetvos/widevine/widevine_patch.py
 COPY tools/vendor/LICENSE.pivine /usr/share/freetvos/widevine/LICENSE.pivine
 
@@ -156,6 +167,9 @@ RUN chmod 0755 /usr/bin/freetvos-webapp /usr/bin/freetvos-firstboot \
               /usr/bin/freetvos-usb-mount /usr/bin/freetvos-tune \
               /usr/bin/freetvos-moonlight /usr/bin/freetvos-sports \
               /usr/bin/freetvos-setup /usr/bin/freetvos-jellyfin \
+              /usr/bin/freetvos-bars \
+              /usr/bin/freetvos-livetv /usr/bin/freetvos-livetv-player \
+              /usr/bin/freetvos-meet \
  && python3 /usr/share/freetvos/generate-desktop-entries.py \
  && python3 /usr/share/freetvos/curate-apps.py \
  && python3 /usr/share/freetvos/brand-os-release.py \
@@ -203,6 +217,7 @@ RUN systemctl enable sddm avahi-daemon bluetooth NetworkManager sshd \
  && systemctl --global enable freetvos-cec-claim.service \
  && systemctl --global enable freetvos-hdmi-monitor.service \
  && systemctl --global enable freetvos-setup.service \
+ && systemctl --global enable freetvos-bars.service \
  && systemctl enable freetvos-airplay.service freetvos-firstboot.service freetvos-dial.service \
  && systemctl set-default graphical.target \
  && if [ "$BUNDLE_WIDEVINE" != "yes" ]; then \

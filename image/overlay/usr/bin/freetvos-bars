@@ -1,0 +1,381 @@
+#!/usr/bin/env python3
+"""Bars at the bottom of the screen: stock prices, live scores, and your own.
+
+Three bars that stack above whatever is playing, each with its own schedule:
+always, only while the market is open, only while games are live, or a time of
+day. The third bar is yours to fill with a title, a logo, a message and a news
+feed.
+
+  freetvos-bars serve        the service behind them, run by the session
+  freetvos-bars settings     the page for choosing what shows and when
+  freetvos-bars status       which bars are showing now, and why not if not
+  freetvos-bars on BAR       turn one on: stocks, sports or custom
+  freetvos-bars off BAR
+
+The service decides and fetches; a small QML overlay draws. The overlay sits in
+the compositor's overlay layer, above fullscreen video, and takes no keyboard
+focus, so the remote keeps working the app underneath.
+"""
+import argparse
+import datetime as dt
+import http.server
+import importlib.machinery
+import importlib.util
+import json
+import os
+import socket
+import subprocess
+import sys
+import threading
+import time
+from pathlib import Path
+
+sys.path.insert(0, "/usr/share/freetvos")
+sys.path.insert(0, "/usr/share/freetvos/bars")
+
+import sources                                              # noqa: E402
+
+CONF_HOME = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+SETTINGS = Path(os.environ.get("FREETVOS_BARS_CONF",
+                               CONF_HOME / "freetvos/bars.json"))
+OVERLAY = os.environ.get("FREETVOS_BARS_QML",
+                         "/usr/share/freetvos/bars/Bars.qml")
+QML = os.environ.get("FREETVOS_QML", "/usr/lib64/qt6/bin/qml")
+SPORTS_CMD = os.environ.get("FREETVOS_SPORTS_CMD", "/usr/bin/freetvos-sports")
+
+KINDS = ("stocks", "sports", "custom")
+
+DEFAULTS = {
+    "stocks": {"id": "stocks", "enabled": False, "when": "market",
+               "window": "", "days": [], "speed": 140,
+               "symbols": ["SPY", "QQQ", "AAPL", "MSFT", "NVDA", "AMZN"],
+               "assets": {"SPY": "etf", "QQQ": "etf"}},
+    "sports": {"id": "sports", "enabled": False, "when": "live",
+               "window": "", "days": [], "speed": 140,
+               "followed_only": False},
+    "custom": {"id": "custom", "enabled": False, "when": "always",
+               "window": "", "days": [], "speed": 120,
+               "title": "", "message": "", "logo": "", "feed": ""},
+}
+
+# How often each source is asked, while its bar could be showing. Prices move
+# every second and nobody reads a crawl that fast; scores change by the play;
+# headlines by the hour.
+EVERY = {"stocks": 60, "sports": 30, "custom": 600, "market": 300}
+
+
+# ---------------------------------------------------------------------------
+# Settings.
+# ---------------------------------------------------------------------------
+
+
+def settings() -> dict:
+    """The bars in stacking order, top first, each filled out with defaults."""
+    try:
+        stored = json.loads(SETTINGS.read_text())
+    except (OSError, ValueError):
+        stored = {}
+    seen, bars = set(), []
+    for bar in stored.get("bars") or []:
+        kind = bar.get("id")
+        if kind in DEFAULTS and kind not in seen:
+            seen.add(kind)
+            bars.append({**DEFAULTS[kind], **bar})
+    for kind in KINDS:
+        if kind not in seen:
+            bars.append(dict(DEFAULTS[kind]))
+    return {"bars": bars}
+
+
+def save(data: dict) -> None:
+    SETTINGS.parent.mkdir(parents=True, exist_ok=True)
+    temporary = SETTINGS.with_suffix(".tmp")
+    temporary.write_text(json.dumps(data, indent=2) + "\n")
+    # Replaced in one step, because the service reads this file on a timer and
+    # a half-written one would switch every bar off for a moment.
+    temporary.replace(SETTINGS)
+
+
+def update_bar(kind: str, **changes) -> dict:
+    data = settings()
+    for bar in data["bars"]:
+        if bar["id"] == kind:
+            bar.update(changes)
+    save(data)
+    return data
+
+
+def set_stocks(symbols: list, assets: dict) -> dict:
+    """The chosen symbols in scroll order, and what kind each one is.
+
+    Kinds for symbols no longer chosen are dropped, so the file does not
+    collect every symbol ever searched for.
+    """
+    clean = []
+    for symbol in symbols:
+        symbol = symbol.strip().upper()
+        if symbol and symbol not in clean:
+            clean.append(symbol)
+    kinds = {s: assets[s] for s in clean if assets.get(s)}
+    return update_bar("stocks", symbols=clean, assets=kinds)
+
+
+def move_bar(kind: str, delta: int) -> dict:
+    data = settings()
+    order = [b["id"] for b in data["bars"]]
+    if kind in order:
+        i = order.index(kind)
+        j = min(max(i + delta, 0), len(order) - 1)
+        data["bars"].insert(j, data["bars"].pop(i))
+        save(data)
+    return data
+
+
+# ---------------------------------------------------------------------------
+# The data behind the bars.
+# ---------------------------------------------------------------------------
+
+
+def _sports():
+    loader = importlib.machinery.SourceFileLoader("freetvos_sports", SPORTS_CMD)
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+
+
+class Feeder:
+    """Keeps each source's latest answer, asking no more often than it must."""
+
+    def __init__(self, fetch=None):
+        self.fetch = fetch or {
+            "stocks": lambda bar: sources.quotes(bar.get("symbols") or [],
+                                                 bar.get("assets") or {}),
+            "sports": lambda bar: _sports().today()["games"],
+            "custom": lambda bar: (sources.feed(bar["feed"])
+                                   if bar.get("feed") else []),
+            "market": lambda bar: sources.market_status(
+                dt.datetime.now(dt.timezone.utc)),
+        }
+        self.cache: dict = {}
+        self.errors: dict = {}
+
+    def get(self, name: str, bar: dict, key: str = ""):
+        """The cached answer, refreshed when it is older than its cadence.
+
+        The key changes when the question does, so choosing different stock
+        symbols is answered at once rather than a minute later.
+        """
+        entry = self.cache.get(name)
+        stale = (entry is None or entry[1] != key
+                 or time.time() - entry[0] > EVERY[name])
+        if stale:
+            try:
+                value = self.fetch[name](bar)
+                self.cache[name] = (time.time(), key, value)
+                self.errors.pop(name, None)
+            except Exception as exc:                        # noqa: BLE001
+                # Keep showing the last good answer. A bar that vanishes
+                # because one request failed looks broken; one that is a minute
+                # behind looks like a ticker.
+                self.errors[name] = str(exc)[:160]
+                if entry is None:
+                    return None
+        return self.cache[name][2]
+
+
+def build(data: dict, feeder: Feeder, now: dt.datetime) -> dict:
+    """What the overlay should draw now, and a reason for every bar left off."""
+    shown, notes = [], {}
+    for bar in data["bars"]:
+        kind = bar["id"]
+        if not bar.get("enabled"):
+            notes[kind] = "off"
+            continue
+
+        facts = {}
+        if bar.get("when") == "market":
+            facts["market"] = feeder.get("market", bar) or "unknown"
+        games = None
+        if kind == "sports" or bar.get("when") == "live":
+            games = feeder.get("sports", bar) or []
+            facts["live"] = sources.any_live(games,
+                                             bar.get("followed_only", False))
+
+        if not sources.should_show(bar, now, facts):
+            notes[kind] = {"market": "market closed",
+                           "live": "no games live",
+                           "window": "outside its hours"}.get(
+                               bar.get("when"), "not scheduled now")
+            continue
+
+        entry = {"id": kind, "speed": bar.get("speed", 140), "items": []}
+        if kind == "stocks":
+            key = ",".join(bar.get("symbols") or [])
+            entry["title"] = "MARKETS"
+            entry["items"] = feeder.get("stocks", bar, key) or []
+        elif kind == "sports":
+            entry["title"] = "SCORES"
+            entry["items"] = sources.score_items(
+                games or [], only_live=bar.get("when") == "live")
+        else:
+            entry["title"] = bar.get("title", "")
+            logo = bar.get("logo", "")
+            if logo and not logo.startswith(("http://", "https://", "file:")):
+                logo = Path(logo).expanduser().resolve().as_uri()
+            entry["logo"] = logo
+            items = []
+            if bar.get("message"):
+                items.append({"label": bar["message"], "direction": "flat"})
+            # Only asked when there is a feed. With none, the last feed's
+            # headlines are still cached for up to ten minutes, and clearing
+            # the address would leave them crawling past as if it had not.
+            if bar.get("feed"):
+                for headline in feeder.get("custom", bar, bar["feed"]) or []:
+                    items.append({"label": headline, "direction": "flat"})
+            entry["items"] = items
+
+        if not entry["items"]:
+            notes[kind] = feeder.errors.get(
+                kind, "nothing to show yet")
+            continue
+        notes[kind] = "showing"
+        shown.append(entry)
+    return {"bars": shown, "notes": notes}
+
+
+# ---------------------------------------------------------------------------
+# The service.
+# ---------------------------------------------------------------------------
+
+
+class Service:
+    def __init__(self):
+        self.feeder = Feeder()
+        self.payload = {"bars": [], "notes": {}}
+        self.overlay = None
+        self.lock = threading.Lock()
+
+    def tick(self) -> None:
+        payload = build(settings(), self.feeder,
+                        dt.datetime.now().astimezone())
+        with self.lock:
+            self.payload = payload
+
+    def serve_http(self) -> int:
+        service = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *_a):
+                pass
+
+            def do_GET(self):
+                if self.path.split("?")[0] != "/bars.json":
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                with service.lock:
+                    body = json.dumps(service.payload).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        sock = socket.socket()
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+        sock.close()
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", port), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        return port
+
+    def keep_overlay(self, port: int) -> None:
+        """The overlay runs while there is something to draw, and not otherwise.
+
+        Stopped rather than left drawing nothing, because an empty layer
+        surface still exists and an empty strip across the bottom of a film is
+        exactly the thing this is trying not to be.
+        """
+        wanted = bool(self.payload["bars"])
+        running = self.overlay is not None and self.overlay.poll() is None
+        if wanted and not running:
+            env = dict(os.environ, QT_QPA_PLATFORM="wayland")
+            self.overlay = subprocess.Popen(
+                [QML, OVERLAY, f"http://127.0.0.1:{port}/bars.json"], env=env,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif not wanted and running:
+            self.overlay.terminate()
+            try:
+                self.overlay.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.overlay.kill()
+            self.overlay = None
+
+    def run(self) -> int:
+        port = self.serve_http()
+        try:
+            while True:
+                try:
+                    self.tick()
+                except Exception as exc:                    # noqa: BLE001
+                    print(f"bars: {exc}", file=sys.stderr)
+                self.keep_overlay(port)
+                time.sleep(10)
+        finally:
+            if self.overlay is not None and self.overlay.poll() is None:
+                self.overlay.terminate()
+
+
+# ---------------------------------------------------------------------------
+# Commands.
+# ---------------------------------------------------------------------------
+
+
+def cmd_serve(_args) -> int:
+    return Service().run()
+
+
+def cmd_status(_args) -> int:
+    result = build(settings(), Feeder(), dt.datetime.now().astimezone())
+    for bar in settings()["bars"]:
+        note = result["notes"].get(bar["id"], "")
+        print(f"{bar['id']:7} {bar['when']:7} {note}")
+    return 0
+
+
+def cmd_toggle(args) -> int:
+    if args.bar not in KINDS:
+        print(f"no such bar: {args.bar}", file=sys.stderr)
+        return 2
+    update_bar(args.bar, enabled=args.cmd == "on")
+    print(f"{args.bar} {args.cmd}")
+    return 0
+
+
+def cmd_settings(_args) -> int:
+    import barsui
+    return barsui.run(sys.modules[__name__])
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        prog="freetvos-bars", description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="cmd")
+    sub.add_parser("serve").set_defaults(func=cmd_serve)
+    sub.add_parser("status").set_defaults(func=cmd_status)
+    sub.add_parser("settings").set_defaults(func=cmd_settings)
+    for name in ("on", "off"):
+        p = sub.add_parser(name)
+        p.add_argument("bar")
+        p.set_defaults(func=cmd_toggle)
+    args = parser.parse_args()
+    if not args.cmd:
+        parser.print_help()
+        return 2
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE tv SYSTEM "xmltv.dtd">
+<tv generator-info-name="tunarr">
+  <channel id="C1.tunarr.com">
+    <display-name>1 Saturday Cartoons</display-name>
+    <display-name>1</display-name>
+    <display-name>Saturday Cartoons</display-name>
+    <icon src="http://tunarr.lan:8000/images/tunarr.png" width="120"/>
+  </channel>
+  <channel id="C2.tunarr.com">
+    <display-name>2 Movie Night, Classics</display-name>
+    <display-name>2</display-name>
+    <display-name>Movie Night, Classics</display-name>
+  </channel>
+  <channel id="C10.tunarr.com">
+    <display-name>10 Sitcoms</display-name>
+    <display-name>10</display-name>
+    <display-name>Sitcoms</display-name>
+  </channel>
+  <programme start="20260915180000 +0000" stop="20260915183000 +0000" channel="C1.tunarr.com">
+    <title lang="en">Space Rangers</title>
+    <sub-title lang="en">The Comet</sub-title>
+    <desc lang="en">The rangers chase a comet &amp; lose their map.</desc>
+    <episode-num system="onscreen">S01E04</episode-num>
+  </programme>
+  <programme start="20260915183000 +0000" stop="20260915190000 +0000" channel="C1.tunarr.com">
+    <title lang="en">Robot Pals</title>
+  </programme>
+  <programme start="20260915170000 +0000" stop="20260915190000 +0000" channel="C2.tunarr.com">
+    <title lang="en">The Long Road</title>
+    <desc lang="en">A drifter crosses the country.</desc>
+  </programme>
+  <programme start="20260915190000 -0500" stop="20260915193000 -0500" channel="C10.tunarr.com">
+    <title lang="en">Neighbours Next Door</title>
+  </programme>
+  <programme start="20260915180000 +0000" stop="20260915183000 +0000" channel="C99.missing">
+    <title lang="en">A channel nobody listed</title>
+  </programme>
+</tv>

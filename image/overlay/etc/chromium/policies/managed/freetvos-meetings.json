@@ -1,0 +1,16 @@
+{
+  "VideoCaptureAllowedUrls": [
+    "https://meet.google.com",
+    "https://app.zoom.us",
+    "https://[*.]zoom.us",
+    "https://teams.microsoft.com",
+    "https://teams.live.com"
+  ],
+  "AudioCaptureAllowedUrls": [
+    "https://meet.google.com",
+    "https://app.zoom.us",
+    "https://[*.]zoom.us",
+    "https://teams.microsoft.com",
+    "https://teams.live.com"
+  ]
+}

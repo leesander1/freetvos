@@ -1,0 +1,16 @@
+[Unit]
+Description=Stock, score and custom bars at the bottom of the screen
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+# Always running, and drawing nothing unless a bar is switched on and its
+# schedule says now. With every bar off it wakes every ten seconds, reads one
+# small file, and goes back to sleep.
+Type=simple
+ExecStart=/usr/bin/freetvos-bars serve
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=graphical-session.target

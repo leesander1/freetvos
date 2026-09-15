@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Live TV
+Comment=Channels and a programme guide from Tunarr, an HDHomeRun tuner or a playlist
+Exec=/usr/bin/freetvos-livetv browse
+Icon=freetvos-livetv
+Categories=AudioVideo;Video;TV;
+Terminal=false
+StartupNotify=true
+X-KDE-FormFactor=tv

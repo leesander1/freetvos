@@ -52,6 +52,10 @@ def main() -> None:
             "X-KDE-FormFactor=tv",
             f"X-FreeTVOS-WebApp={app_id}",
             f"X-FreeTVOS-DRM={cfg.get('DRM', 'no')}",
+            # A service that is only ever opened by something else, such as a
+            # video call opened by Meetings with the meeting's own address.
+            # A tile for it would open a sign-in page with nothing to join.
+            *(["NoDisplay=true"] if cfg.get("HIDDEN") == "yes" else []),
             "",
         ])
         target = OUT / f"freetvos-{app_id}.desktop"

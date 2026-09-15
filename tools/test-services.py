@@ -12,6 +12,7 @@ Run with: python3 tools/test-services.py
 import importlib.machinery
 import importlib.util
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -162,9 +163,15 @@ def main() -> int:
         # first. Prime Video, Paramount+ and Peacock moved from one to the other.
         check("nothing is both built in and offered for adding",
               sorted(set(shipped) & set(offered)), [])
-        check("every built-in service has its own icon",
+        # The icon a definition names, not one named after the service: the
+        # three video-call services share the Meetings icon on purpose.
+        def icon_of(service):
+            text = (REPO / f"webapps/apps.d/{service}.app").read_text()
+            found = re.search(r'^ICON="([^"]+)"', text, re.M)
+            return found.group(1) if found else f"freetvos-{service}"
+        check("every built-in service has an icon",
               [s for s in shipped
-               if not (REPO / f"brand/icons/freetvos-{s}.svg").exists()], [])
+               if not (REPO / f"brand/icons/{icon_of(s)}.svg").exists()], [])
 
         print("typing on a television")
         sys.path.insert(0, str(REPO / "image/overlay/usr/share/freetvos"))
@@ -179,6 +186,24 @@ def main() -> int:
                   "function tvkeyboard" in body and "__KB__" not in body, True)
             check(f"{label} opens it from the field",
                   "tvkeyboard({" in body, True)
+
+        print("the split view picker")
+        pick_loader = importlib.machinery.SourceFileLoader(
+            "freetvos_pick", str(REPO / "image/overlay/usr/bin/freetvos-pick"))
+        pick_spec = importlib.util.spec_from_loader(pick_loader.name, pick_loader)
+        pick = importlib.util.module_from_spec(pick_spec)
+        pick_loader.exec_module(pick)
+        pick.SERVICE_DEFS = REPO / "webapps/apps.d"
+        pick.USER_DEFS = root / "no-user-services"
+        offered = [s["id"] for s in pick.services()]
+        # The video-call services are hidden from the home screen and opened
+        # only by Meetings; offering them as panes put a sign-in page in split
+        # view.
+        check("hidden services are not offered as panes",
+              [s for s in ("zoom", "googlemeet", "teams") if s in offered], [])
+        check("every other built-in service is",
+              sorted(offered),
+              sorted(s for s in shipped if s not in ("zoom", "googlemeet", "teams")))
 
         print("the jellyfin tile")
         jf_loader = importlib.machinery.SourceFileLoader(

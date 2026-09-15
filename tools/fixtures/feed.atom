@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/" xml:lang="en-US">
+  <id>tag:github.com,2008:https://github.com/KDE/plasma-bigscreen/releases</id>
+  <link type="text/html" rel="alternate" href="https://github.com/KDE/plasma-bigscreen/releases"/>
+  <link type="application/atom+xml" rel="self" href="https://github.com/KDE/plasma-bigscreen/releases.atom"/>
+  <title>Tags from plasma-bigscreen</title>
+  <updated>2026-09-10T14:39:19Z</updated>
+  <entry>
+    <id>tag:github.com,2008:Repository/243533712/v6.7.90</id>
+    <updated>2026-09-10T14:39:19Z</updated>
+    <link rel="alternate" type="text/html" href="https://github.com/KDE/plasma-bigscreen/releases/tag/v6.7.90"/>
+    <title>v6.7.90</title>
+    <content></content>
+    <author>
+      <name>bhush9</name>
+    </author>
+    <media:thumbnail height="30" width="30" url="https://avatars.githubusercontent.com/u/1061944?s=60&amp;v=4"/>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Repository/243533712/v6.7.5</id>
+    <updated>2026-09-08T11:37:41Z</updated>
+    <link rel="alternate" type="text/html" href="https://github.com/KDE/plasma-bigscreen/releases/tag/v6.7.5"/>
+    <title>v6.7.5</title>
+    <content></content>
+    <author>
+      <name>bhush9</name>
+    </author>
+    <media:thumbnail height="30" width="30" url="https://avatars.githubusercontent.com/u/1061944?s=60&amp;v=4"/>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Repository/243533712/v6.7.4</id>
+    <updated>2026-08-04T10:01:32Z</updated>
+    <link rel="alternate" type="text/html" href="https://github.com/KDE/plasma-bigscreen/releases/tag/v6.7.4"/>
+    <title>v6.7.4</title>
+    <content></content>
+    <author>
+      <name>bhush9</name>
+    </author>
+    <media:thumbnail height="30" width="30" url="https://avatars.githubusercontent.com/u/1061944?s=60&amp;v=4"/>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Repository/243533712/v6.7.3</id>
+    <updated>2026-07-14T11:42:35Z</updated>
+    <link rel="alternate" type="text/html" href="https://github.com/KDE/plasma-bigscreen/releases/tag/v6.7.3"/>
+    <title>v6.7.3</title>
+    <content></content>
+    <author>
+      <name>bhush9</name>
+    </author>
+    <media:thumbnail height="30" width="30" url="https://avatars.githubusercontent.com/u/1061944?s=60&amp;v=4"/>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Repository/243533712/v6.7.2</id>
+    <updated>2026-06-30T13:09:52Z</updated>
+    <link rel="alternate" type="text/html" href="https://github.com/KDE/plasma-bigscreen/releases/tag/v6.7.2"/>
+    <title>v6.7.2</title>
+    <content></content>
+    <author>
+      <name>bhush9</name>
+    </author>
+    <media:thumbnail height="30" width="30" url="https://avatars.githubusercontent.com/u/1061944?s=60&amp;v=4"/>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Repository/243533712/v6.7.1</id>
+    <updated>2026-06-23T08:47:02Z</updated>
+    <link rel="alternate" type="text/html" href="https://github.com/KDE/plasma-bigscreen/releases/tag/v6.7.1"/>
+    <title>v6.7.1</title>
+    <content></content>
+    <author>
+      <name>bhush9</name>
+    </author>
+    <media:thumbnail height="30" width="30" url="https://avatars.githubusercontent.com/u/1061944?s=60&amp;v=4"/>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Repository/243533712/v6.7.0</id>
+    <updated>2026-06-16T07:36:37Z</updated>
+    <link rel="alternate" type="text/html" href="https://github.com/KDE/plasma-bigscreen/releases/tag/v6.7.0"/>
+    <title>v6.7.0</title>
+    <content></content>
+    <author>
+      <name>bhush9</name>
+    </author>
+    <media:thumbnail height="30" width="30" url="https://avatars.githubusercontent.com/u/1061944?s=60&amp;v=4"/>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Repository/243533712/v6.6.91</id>
+    <updated>2026-05-28T12:29:15Z</updated>
+    <link rel="alternate" type="text/html" href="https://github.com/KDE/plasma-bigscreen/releases/tag/v6.6.91"/>
+    <title>v6.6.91</title>
+    <content></content>
+    <author>
+      <name>bhush9</name>
+    </author>
+    <media:thumbnail height="30" width="30" url="https://avatars.githubusercontent.com/u/1061944?s=60&amp;v=4"/>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Repository/243533712/v6.6.90</id>
+    <updated>2026-05-14T09:46:24Z</updated>
+    <link rel="alternate" type="text/html" href="https://github.com/KDE/plasma-bigscreen/releases/tag/v6.6.90"/>
+    <title>v6.6.90</title>
+    <content></content>
+    <author>
+      <name>bhush9</name>
+    </author>
+    <media:thumbnail height="30" width="30" url="https://avatars.githubusercontent.com/u/1061944?s=60&amp;v=4"/>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Repository/243533712/v5.27.12</id>
+    <updated>2025-01-06T18:34:09Z</updated>
+    <link rel="alternate" type="text/html" href="https://github.com/KDE/plasma-bigscreen/releases/tag/v5.27.12"/>
+    <title>v5.27.12</title>
+    <content></content>
+    <author>
+      <name>jriddell</name>
+    </author>
+    <media:thumbnail height="30" width="30" url="https://avatars.githubusercontent.com/u/89822?s=60&amp;v=4"/>
+  </entry>
+</feed>

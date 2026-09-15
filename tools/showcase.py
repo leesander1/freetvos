@@ -43,6 +43,10 @@ STILLS = [
     ("inputs", "/usr/bin/freetvos-hdmi show", 14, []),
     ("picture-sound", "/usr/bin/freetvos-tune show", 14, []),
     ("split-picker", "/usr/bin/freetvos-split pick", 16, []),
+    ("tickers", "/usr/bin/freetvos-bars settings", 16, []),
+    ("stock-picker", None, 0, ["down", "down", "down", "ret"]),
+    ("livetv-guide", "/usr/bin/freetvos-livetv browse", 18, []),
+    ("livetv-watching", None, 0, "watch"),
 ]
 
 
@@ -123,7 +127,8 @@ def close_everything() -> None:
     # over ssh contains the pattern too, so without it the cleanup kills its
     # own session before it has finished.
     vm("pkill -f '[c]lass=freetvos-' ; pkill -f '[f]reetvos-(setup|service|"
-       "sports|media|hdmi|tune|split|pick)' ; true")
+       "sports|media|hdmi|tune|split|pick|livetv|meet)' ; "
+       "pkill -f '[f]reetvos-bars settings' ; pkill -f '[l]ivetv-ipc.sock' ; true")
     time.sleep(4)
 
 
@@ -170,6 +175,13 @@ def stills() -> int:
             time.sleep(2)
             keys("h", "o", "m", "e", gap=0.2)
             time.sleep(1)
+        elif extra == "watch":
+            # Enter tunes, then Up changes channel, and the picture is taken
+            # while the channel banner is still on screen.
+            keys("ret")
+            time.sleep(14)
+            keys("up")
+            time.sleep(1.2)
         elif extra:
             keys(*extra)
             time.sleep(6)

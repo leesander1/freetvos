@@ -178,7 +178,9 @@ function tvnav(cells, onChoose, onBack, start) {
   }
   function render() {
     cells.forEach((el, i) => el.classList.toggle('sel', i === index));
-    cells[index].scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    // The centre, not the nearest edge: the bars along the bottom of the
+    // screen sit above every page and cover a row scrolled only that far.
+    cells[index].scrollIntoView({ block: 'center', inline: 'nearest' });
   }
   const handler = e => {
     if (e.key === 'ArrowRight') move(1, 0);
