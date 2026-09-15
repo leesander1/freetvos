@@ -22,6 +22,9 @@ if [ ! -f "$VARS" ]; then
   dd if=/dev/zero of="$VARS" bs=1m count=64 2>/dev/null
 fi
 
+# RAM=2048 boots with less memory, for finding what the television needs to
+# run smoothly. The default is 4 GB.
+#
 # HEADLESS=1 swaps the window for a serial console, which is how you read the
 # boot log and confirm services actually came up. The graphical mode shows the
 # shell but tells you nothing when it fails to start.
@@ -38,6 +41,10 @@ fi
 # USB_IMG=output/usb.img attaches a drive to the emulated USB bus, which is the
 # only way to exercise the automounter: there is no other source of a hotplugged
 # block device in a VM.
+#
+# Expanded below with the ${a[@]+...} form: the bash macOS ships (3.2) calls an
+# empty array unbound under set -u, so a plain "${USB_ARGS[@]}" refused to boot
+# whenever no drive was attached.
 USB_ARGS=()
 if [ -n "${USB_IMG:-}" ]; then
   [ -f "$USB_IMG" ] || { echo "no USB image at $USB_IMG" >&2; exit 1; }
@@ -51,7 +58,7 @@ exec qemu-system-aarch64 \
   -machine virt,accel=hvf,highmem=on \
   -cpu host \
   -smp 4 \
-  -m 4096 \
+  -m "${RAM:-4096}" \
   -drive "if=pflash,format=raw,readonly=on,file=$FW" \
   -drive "if=pflash,format=raw,file=$VARS" \
   -drive "if=virtio,format=qcow2,file=$DISK" \
@@ -59,7 +66,7 @@ exec qemu-system-aarch64 \
   -device qemu-xhci \
   -device usb-kbd \
   -device usb-tablet \
-  "${USB_ARGS[@]}" \
+  ${USB_ARGS[@]+"${USB_ARGS[@]}"} \
   -audiodev coreaudio,id=snd0 \
   -device intel-hda -device hda-duplex,audiodev=snd0 \
   -nic user,model=virtio-net-pci,hostfwd=tcp::2222-:22 \

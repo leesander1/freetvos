@@ -90,6 +90,7 @@ ssh -p 2222 tv@localhost
 | `docs/LIVETV.md` | Channels and a guide from Tunarr, a tuner or a playlist |
 | `docs/PIP.md` | One service full screen and another small in a corner |
 | `docs/MEETINGS.md` | Zoom, Meet and Teams calls, and what is verified about the camera |
+| `docs/RESOURCES.md` | How much memory and CPU it uses, and how much RAM a box needs |
 | `docs/INSTALL.md` | Getting it onto real x86_64 hardware |
 
 ## First run
