@@ -168,6 +168,10 @@ COPY brand/png/hicolor/ /usr/share/icons/hicolor/
 COPY brand/png/splash/logo.png /usr/share/plymouth/themes/freetvos/logo.png
 COPY brand/png/splash/logo.png \
      /usr/share/plasma/look-and-feel/org.freetvos.bigscreen/contents/splash/images/logo.png
+# Splash.qml draws images/background.png under its ground colour, and the image
+# never shipped one, so every login asked for a file that was not there.
+COPY brand/png/splash/background.png \
+     /usr/share/plasma/look-and-feel/org.freetvos.bigscreen/contents/splash/images/background.png
 COPY brand/png/wallpaper/ /usr/share/wallpapers/FreeTVOS/contents/images/
 
 COPY --from=qmlruntime /usr/lib64/qt6/bin/qml /usr/lib64/qt6/bin/qml
