@@ -163,6 +163,3 @@ The small mark exists because the full one does not survive 16px: its stand and
 foot smear into one blob and the play symbol becomes a speck. The small drawing
 runs the tile to the edge and gives every part at least two pixels. It is used
 at 24px and below; from 32px the full mark reads.
-
-The service tiles are still recognisable versions of each service's own mark and
-colours. Read §4 before distributing an image that contains them.
