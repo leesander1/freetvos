@@ -1,0 +1,397 @@
+<title>FreeTVOS on Screen</title>
+<meta name="color-scheme" content="dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Display:wdth,wght@87.5,500;87.5,600;87.5,700&family=Noto+Sans:wght@400;500;600&family=Noto+Sans+Mono:wght@400;500&display=swap">
+<style>
+  /* One visual world on purpose: this is a television's own ground, taken from
+     brand/brand.env, so the page does not follow the viewer's light theme.
+     Light-surface assets sit on their own light plates instead. */
+  :root {
+    --ground: #0B0E14;
+    --panel: #151A23;
+    --raised: #1E2430;
+    --rule: #2A3242;
+    --text: #E6EAF2;
+    --dim: #8C97AB;
+    --signal: #3DDC97;
+    --focus: #4EA8FF;
+    --plate: #F3F5F8;
+    --plate-ink: #0B0E14;
+    --display: "Noto Sans Display", "Noto Sans", system-ui, sans-serif;
+    --body: "Noto Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "Noto Sans Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--ground); }
+  body {
+    margin: 0; background: var(--ground); color: var(--text);
+    font: 400 16px/1.6 var(--body);
+    -webkit-font-smoothing: antialiased;
+  }
+  img { display: block; max-width: 100%; height: auto; }
+  code, .mono { font-family: var(--mono); font-size: 13px; }
+  a { color: var(--focus); }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; border-radius: 4px; }
+
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 32px 96px; }
+
+  header.top {
+    display: grid; grid-template-columns: auto 1fr; gap: 12px 40px; align-items: end;
+    padding: 56px 0 40px; border-bottom: 1px solid var(--rule);
+  }
+  header.top .mark { width: 300px; }
+  header.top h1 {
+    grid-column: 1 / -1; margin: 28px 0 0;
+    font: 600 44px/1.1 var(--display); font-stretch: 87.5%;
+    letter-spacing: -0.01em; text-wrap: balance;
+  }
+  header.top p { grid-column: 1 / -1; margin: 0; max-width: 64ch; color: var(--dim); font-size: 17px; }
+  header.top .tally {
+    grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px 28px; margin-top: 18px;
+    font: 500 13px/1 var(--mono); color: var(--dim); font-variant-numeric: tabular-nums;
+  }
+  .tally b { color: var(--text); font-weight: 500; }
+
+  section { padding: 64px 0 0; }
+  .head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px 18px; margin-bottom: 22px; }
+  h2 {
+    margin: 0; font: 600 30px/1.15 var(--display); font-stretch: 87.5%;
+    text-wrap: balance;
+  }
+  .lede { margin: 0 0 26px; max-width: 66ch; color: var(--dim); }
+
+  .chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 4px 10px 4px 9px; border-radius: 999px;
+    font: 500 12px/1 var(--mono); letter-spacing: 0.02em; white-space: nowrap;
+  }
+  .chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; }
+  .chip.used { color: var(--signal); background: rgba(61, 220, 151, 0.1); }
+  .chip.used::before { background: var(--signal); }
+  .chip.idle { color: var(--dim); box-shadow: inset 0 0 0 1px var(--rule); }
+  .chip.idle::before { box-shadow: inset 0 0 0 1.5px var(--dim); }
+
+  /* ---- power-on sequence ---------------------------------------------- */
+  .toolbar { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; margin: -6px 0 22px; }
+  .toggle {
+    appearance: none; border: 1px solid var(--rule); background: var(--panel); color: var(--text);
+    font: 500 14px/1 var(--body); padding: 10px 14px; border-radius: 8px; cursor: pointer;
+    display: inline-flex; gap: 10px; align-items: center;
+  }
+  .toggle[aria-pressed="true"] { border-color: var(--signal); }
+  .toggle .box { width: 14px; height: 14px; border-radius: 3px; border: 2px solid var(--dim); }
+  .toggle[aria-pressed="true"] .box { border-color: var(--signal); background: var(--signal); }
+  .legend { display: flex; gap: 18px; font: 400 13px/1 var(--mono); color: var(--dim); }
+  .legend i { display: inline-block; width: 18px; height: 0; border-top: 2px dashed; vertical-align: middle; margin-right: 8px; }
+  .legend .title i { color: var(--signal); }
+  .legend .action i { color: var(--focus); }
+
+  .sequence { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+  .stage { margin: 0; }
+  .screen { position: relative; aspect-ratio: 16 / 9; background: #000; border-radius: 6px; overflow: hidden;
+    box-shadow: 0 0 0 1px var(--rule); }
+  .screen img { width: 100%; height: 100%; object-fit: cover; }
+  .safe { position: absolute; pointer-events: none; opacity: 0; transition: opacity 160ms ease; }
+  .safe.action { inset: 3.5%; border: 1.5px dashed var(--focus); }
+  .safe.title { inset: 5%; border: 1.5px dashed var(--signal); }
+  .overlay-on .safe { opacity: 1; }
+  .stage figcaption { display: grid; gap: 2px; padding: 14px 2px 0; }
+  .stage .when { font: 500 12px/1 var(--mono); color: var(--dim); letter-spacing: 0.04em; text-transform: uppercase; }
+  .stage .what { font: 600 18px/1.3 var(--display); font-stretch: 87.5%; }
+  .stage .how { color: var(--dim); font-size: 14px; }
+
+  /* ---- mark ladder --------------------------------------------------- */
+  .ladder { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 28px 34px;
+    padding: 32px; background: var(--panel); border-radius: 10px; }
+  .rung { display: grid; justify-items: start; gap: 12px; }
+  .rung .actual { display: grid; place-items: end start; min-height: 128px; }
+  .rung.small { grid-template-columns: auto auto; column-gap: 18px; align-items: end; }
+  .rung.small .meta { grid-column: 1 / -1; }
+  .px { image-rendering: pixelated; border-radius: 2px; box-shadow: 0 0 0 1px var(--rule); background: var(--ground); }
+  .rung .meta { display: flex; gap: 8px; align-items: baseline; font-family: var(--mono); font-size: 13px;
+    font-variant-numeric: tabular-nums; color: var(--dim); }
+  .rung .meta b { color: var(--text); font-weight: 500; }
+  .rung .meta b::after { content: "px"; color: var(--dim); font-weight: 400; margin-left: 1px; }
+  .note { margin: 16px 0 0; color: var(--dim); font-size: 14px; max-width: 70ch; }
+
+  /* ---- plates ------------------------------------------------------- */
+  .plates { display: grid; grid-template-columns: 1.6fr 1fr; gap: 20px; }
+  .plate { margin: 0; border-radius: 10px; overflow: hidden; box-shadow: 0 0 0 1px var(--rule);
+    display: flex; flex-direction: column; }
+  .plate .pad { flex: 1; display: grid; place-items: center; padding: 40px 32px; min-height: 190px; }
+  .plate.dark .pad { background: var(--ground); }
+  .plate.light .pad { background: var(--plate); }
+  .plate figcaption { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    padding: 12px 16px; background: var(--panel); font-size: 14px; }
+  .plate figcaption code { color: var(--dim); }
+  .plates .stack { display: grid; gap: 20px; }
+
+  /* ---- tiles ------------------------------------------------------- */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 26px 18px; }
+  .tile { margin: 0; display: grid; justify-items: center; gap: 10px; text-align: center; }
+  .tile img { width: 96px; height: 96px; }
+  .tile figcaption { display: grid; gap: 2px; font-size: 14px; line-height: 1.3; }
+  .tile code { font-size: 11px; color: var(--dim); overflow-wrap: anywhere; }
+
+  /* ---- banners ------------------------------------------------------ */
+  .banners { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+  .banner { margin: 0; }
+  .banner img { border-radius: 6px; box-shadow: 0 0 0 1px var(--rule); }
+  .banner figcaption { padding-top: 8px; font-size: 14px; color: var(--dim); }
+
+  /* ---- spinner and splash ---------------------------------------- */
+  .splashkit { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 20px; }
+  .splash-plate { position: relative; aspect-ratio: 16 / 9; background: var(--ground); border-radius: 10px;
+    box-shadow: 0 0 0 1px var(--rule); display: grid; place-items: center; }
+  .splash-plate img { width: 20%; }
+  .spinbox { display: grid; gap: 18px; align-content: start; padding: 28px; background: var(--panel); border-radius: 10px; }
+  .spinner { width: 128px; height: 128px; background: url("{{SPRITE}}") 0 0 / {{SPRITE_WIDTH}}px 128px no-repeat;
+    animation: spin 1s steps({{FRAMES}}) infinite; }
+  @keyframes spin { to { background-position: -{{SPRITE_WIDTH}}px 0; } }
+  .strip { width: 100%; height: auto; aspect-ratio: {{FRAMES}} / 1; background: url("{{SPRITE}}") 0 0 / 100% 100% no-repeat;
+    border-radius: 4px; box-shadow: 0 0 0 1px var(--rule); }
+
+  /* ---- installer --------------------------------------------------- */
+  .installer { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+  .installer .side { display: grid; gap: 20px; }
+  .window { border-radius: 8px; overflow: hidden; box-shadow: 0 0 0 1px var(--rule); background: var(--panel); }
+  .window .bar { display: flex; align-items: center; gap: 6px; padding: 9px 12px; background: var(--raised); }
+  .window .bar i { width: 10px; height: 10px; border-radius: 50%; background: var(--rule); }
+  .window .bar span { margin-left: 8px; font: 400 12px/1 var(--mono); color: var(--dim); }
+  .volume { display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: center; padding: 20px;
+    background: var(--panel); border-radius: 10px; }
+  .volume img { width: 96px; }
+
+  .wallpaper { position: relative; border-radius: 10px; overflow: hidden; box-shadow: 0 0 0 1px var(--rule); }
+  .wallpaper .third { position: absolute; left: 0; right: 0; top: 0; height: 33.333%;
+    border-bottom: 1.5px dashed rgba(140, 151, 171, 0.5); display: flex; align-items: flex-end; padding: 10px 14px; }
+  .wallpaper .third span { font: 500 12px/1 var(--mono); color: var(--dim); }
+
+  footer { margin-top: 72px; padding-top: 22px; border-top: 1px solid var(--rule); color: var(--dim); font-size: 14px; }
+  footer code { color: var(--text); }
+
+  @media (max-width: 900px) {
+    .sequence, .banners { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .plates, .splashkit, .installer { grid-template-columns: 1fr; }
+    header.top h1 { font-size: 36px; }
+  }
+  @media (max-width: 600px) {
+    .wrap { padding: 0 18px 72px; }
+    .sequence, .banners { grid-template-columns: 1fr; }
+    header.top .mark { width: 220px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .spinner { animation: none; }
+    .safe { transition: none; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <img class="mark" src="{{WORDMARK}}" width="1200" height="293" alt="FreeTVOS">
+    <h1>FreeTVOS on Screen</h1>
+    <p>Every piece of brand art the operating system ships, shown where it appears on the running
+      television and marked by whether the image actually reads it. The firmware and home screens are
+      captures from the rebuilt image in the VM. The splash between them never reaches the VM's
+      display, so it is drawn to its themes' own layout.</p>
+    <div class="tally">
+      <span><b>{{SVG_COUNT}}</b> SVG masters</span>
+      <span><b>{{PNG_COUNT}}</b> PNGs</span>
+      <span><b>{{TILE_COUNT}}</b> tiles</span>
+      <span><b>{{BANNER_COUNT}}</b> banners</span>
+      <span>made by <b>tools/gen-assets.sh</b></span>
+    </div>
+  </header>
+
+  <section id="power-on" aria-labelledby="power-on-h">
+    <div class="head">
+      <h2 id="power-on-h">Power-on to home</h2>
+      <span class="chip used">in the image</span>
+    </div>
+    <p class="lede">What the television shows from the moment it starts, in order. Logos and text must
+      stay inside title safe, the inner 90% of the frame, because many sets still crop the edge.</p>
+    <div class="toolbar">
+      <button class="toggle" type="button" aria-pressed="false" id="safe-toggle">
+        <span class="box" aria-hidden="true"></span>Show safe areas
+      </button>
+      <div class="legend" aria-hidden="true">
+        <span class="title"><i></i>title safe 90%</span>
+        <span class="action"><i></i>action safe 93%</span>
+      </div>
+    </div>
+    <div class="sequence" id="sequence">
+      <figure class="stage">
+        <div class="screen">
+          <img src="{{SHOT_BOOT}}" width="1280" height="720" alt="The machine's firmware screen: the TianoCore logo on black in the VM">
+          <div class="safe action"></div><div class="safe title"></div>
+        </div>
+        <figcaption>
+          <span class="when">Power on · captured</span>
+          <span class="what">Firmware</span>
+          <span class="how">The machine's own screen before FreeTVOS loads. No image can replace it:
+            real hardware shows its maker's logo here.</span>
+        </figcaption>
+      </figure>
+      <figure class="stage">
+        <div class="screen">
+          <img src="{{SHOT_SESSION}}" width="1280" height="720" alt="The FreeTVOS splash as its themes lay it out: the mark centred on the brand ground">
+          <div class="safe action"></div><div class="safe title"></div>
+        </div>
+        <figcaption>
+          <span class="when">Boot and login · drawn, not captured</span>
+          <span class="what">Splash</span>
+          <span class="how"><code>splash/logo.png</code> at a fifth of the height, centred. Plymouth's
+            <code>freetvos.script</code> and the login <code>Splash.qml</code> both draw exactly this.</span>
+        </figcaption>
+      </figure>
+      <figure class="stage">
+        <div class="screen">
+          <img src="{{SHOT_HOME}}" width="1280" height="720" alt="The Bigscreen home screen with the FreeTVOS wallpaper and service tiles">
+          <div class="safe action"></div><div class="safe title"></div>
+        </div>
+        <figcaption>
+          <span class="when">Ready · captured</span>
+          <span class="what">Home screen</span>
+          <span class="how">Wallpaper at 1080p and 4K, and every tile from its SVG</span>
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section id="mark" aria-labelledby="mark-h">
+    <div class="head">
+      <h2 id="mark-h">The mark, size by size</h2>
+      <span class="chip used">in the image</span>
+      <code class="mono" style="color: var(--dim)">/usr/share/icons/hicolor/&lt;size&gt;/apps/freetvos.png</code>
+    </div>
+    <p class="lede">Found by name through os-release's <code>LOGO=freetvos</code>. Sizes up to 128 are
+      shown at their real pixel size; the smallest are also enlarged four times with hard edges, which
+      is where the separate small drawing earns its place.</p>
+    <div class="ladder">
+      {{LADDER}}
+    </div>
+    <p class="note">At 16px the full mark's stand and foot smear into one shape and the play symbol is a
+      speck, so 24px and below come from <code>brand/logo/freetvos-small.svg</code>: the tile runs to
+      the edge and every part is at least two pixels.</p>
+  </section>
+
+  <section id="tiles" aria-labelledby="tiles-h">
+    <div class="head">
+      <h2 id="tiles-h">Tiles</h2>
+      <span class="chip used">in the image</span>
+    </div>
+    <p class="lede">Every service and feature on the home screen, shown at 96px, the smallest a focus
+      target should be from three metres away. Each ships as its SVG and as PNGs at 512 and 256.</p>
+    <div class="tiles">
+      {{TILES}}
+    </div>
+  </section>
+
+  <section id="splash" aria-labelledby="splash-h">
+    <div class="head">
+      <h2 id="splash-h">Splash kit</h2>
+      <span class="chip used">logo in the image</span>
+      <span class="chip idle">spinner generated, not read</span>
+    </div>
+    <p class="lede">The boot theme shows a still mark on purpose: a still image reads as faster than an
+      animation, so the 24-frame spinner waits for a theme that wants motion. The flat 1080p background
+      turned out to be asked for already: the login splash draws <code>images/background.png</code>,
+      which no build had shipped. It is copied in from the next build.</p>
+    <div class="splashkit">
+      <div class="splash-plate"><img src="{{SPLASH_LOGO}}" width="640" height="640" alt="Splash logo on the brand ground"></div>
+      <div class="spinbox">
+        <div class="spinner" role="img" aria-label="Spinner, 24 frames at 128px"></div>
+        <div class="strip" role="img" aria-label="All 24 spinner frames side by side"></div>
+        <code class="mono" style="color: var(--dim)">splash/throbber-0001…0024.png · 128 × 128</code>
+      </div>
+    </div>
+  </section>
+
+  <section id="wordmarks" aria-labelledby="wordmarks-h">
+    <div class="head">
+      <h2 id="wordmarks-h">Wordmarks and light surfaces</h2>
+      <span class="chip idle">generated, not read yet</span>
+    </div>
+    <p class="lede">The mark and name side by side, with the text outlined from Noto Sans Bold so no
+      picture depends on installed fonts, plus a one-colour mark for light backgrounds.</p>
+    <div class="plates">
+      <figure class="plate dark">
+        <div class="pad"><img src="{{WORDMARK}}" width="1200" height="293" alt="Wordmark for dark surfaces" style="width: 88%"></div>
+        <figcaption><span>Wordmark, dark</span><code>logo/freetvos-wordmark.png</code></figcaption>
+      </figure>
+      <div class="stack">
+        <figure class="plate light">
+          <div class="pad"><img src="{{WORDMARK_LIGHT}}" width="1200" height="293" alt="Wordmark for light surfaces" style="width: 88%"></div>
+          <figcaption><span>Wordmark, light</span><code>freetvos-wordmark-light.png</code></figcaption>
+        </figure>
+        <figure class="plate light">
+          <div class="pad" style="min-height: 150px"><img src="{{MARK_LIGHT}}" width="512" height="512" alt="Single-colour mark for light surfaces" style="width: 110px"></div>
+          <figcaption><span>Mark on light</span><code>freetvos-mark-light.png</code></figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section id="banners" aria-labelledby="banners-h">
+    <div class="head">
+      <h2 id="banners-h">Banners</h2>
+      <span class="chip idle">generated, not read yet</span>
+    </div>
+    <p class="lede">One 1600 × 900 banner per service, for a featured row the home screen does not have
+      yet. The name stays inside title safe however long it is.</p>
+    <div class="banners">
+      {{BANNERS}}
+    </div>
+  </section>
+
+  <section id="installer" aria-labelledby="installer-h">
+    <div class="head">
+      <h2 id="installer-h">Installer media</h2>
+      <span class="chip idle">generated, not read</span>
+    </div>
+    <p class="lede">Anaconda's sidebar and topbar, and the icon a mounted ISO shows. The installer
+      bootc-image-builder produces takes no artwork, so these wait for an ISO branded another way.</p>
+    <div class="installer">
+      <div class="window">
+        <div class="bar"><i></i><i></i><i></i><span>sidebar.png · 800 × 600</span></div>
+        <img src="{{SIDEBAR}}" width="800" height="600" alt="Installer sidebar with the mark, name and tagline">
+      </div>
+      <div class="side">
+        <div class="window">
+          <div class="bar"><i></i><i></i><i></i><span>topbar.png · 800 × 45</span></div>
+          <img src="{{TOPBAR}}" width="800" height="45" alt="Installer topbar with a small mark and the product name">
+        </div>
+        <div class="volume">
+          <img src="{{VOLUME}}" width="512" height="512" alt="ISO volume icon">
+          <div><div style="font-weight: 600">Volume icon</div><code class="mono" style="color: var(--dim)">installer/volume-icon.png · 512 × 512</code></div>
+        </div>
+        <figure class="plate" style="margin: 0">
+          <div class="wallpaper">
+            <img src="{{WALLPAPER}}" width="960" height="540" alt="The FreeTVOS wallpaper, a dark vertical gradient">
+            <div class="third"><span>upper third kept flat for the clock</span></div>
+          </div>
+          <figcaption><span>Wallpaper <span class="chip used" style="margin-left: 6px">in the image</span></span><code>wallpaper/3840x2160.png</code></figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Regenerate everything with <code>tools/gen-assets.sh</code>; <code>make lint</code> fails if a tile
+    or size goes missing. What reads each asset is listed in <code>docs/ASSETS.md</code>.
+  </footer>
+</div>
+
+<script>
+  (function () {
+    var button = document.getElementById("safe-toggle");
+    var sequence = document.getElementById("sequence");
+    button.addEventListener("click", function () {
+      var on = button.getAttribute("aria-pressed") !== "true";
+      button.setAttribute("aria-pressed", on ? "true" : "false");
+      sequence.classList.toggle("overlay-on", on);
+    });
+  })();
+</script>

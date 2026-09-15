@@ -163,3 +163,21 @@ The small mark exists because the full one does not survive 16px: its stand and
 foot smear into one blob and the play symbol becomes a speck. The small drawing
 runs the tile to the edge and gives every part at least two pixels. It is used
 at 24px and below; from 32px the full mark reads.
+
+## Seeing them all
+
+`docs/asset-showcase.html`, FreeTVOS on Screen, shows every asset above where it
+appears on the television, from power-on to the home screen, and marks each by
+whether the image reads it. It is one self-contained file with every picture
+embedded: open it in a browser. GitHub shows an HTML file as source, so clone or
+download it first.
+
+```bash
+tools/gen-assets.sh                 # the assets
+python3 tools/asset-showcase.py     # then the page, from them
+```
+
+Rebuild the page whenever the assets change. The firmware and home screens on it
+are captures from the VM, kept in `docs/images/showcase`; retake those when the
+home screen changes. The splash between them is drawn by the script to its
+themes' layout, because it never reaches the VM's display.

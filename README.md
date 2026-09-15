@@ -83,6 +83,7 @@ ssh -p 2222 tv@localhost
 | `cast/dial/` | DIAL receiver, for phone-initiated launches |
 | `tools/` | Build, disk, run, screenshot |
 | `docs/ASSETS.md` | What artwork is needed, at what sizes |
+| `docs/asset-showcase.html` | Every brand asset, shown where it appears on the television |
 | `docs/BRANDING.md` | Every Fedora and KDE mark between power-on and the home screen |
 | `docs/REMOTE.md` | Using a phone as the remote |
 | `docs/EXTENSIONS.md` | Browser extensions, and the truth about "force 1080p" |
