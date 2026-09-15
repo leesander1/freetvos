@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3840 2160" width="3840" height="2160">
+  <!-- Written by tools/gen-assets.py from BRAND_BG: dark and flat in the upper third, where the shell draws the clock. Change those and run tools/gen-assets.sh; do not edit this. -->
+  <defs><linearGradient id="ground" x1="0" y1="0" x2="0" y2="1"><stop offset="0.0000" stop-color="#0B0E14"/><stop offset="0.0625" stop-color="#0B0E14"/><stop offset="0.1250" stop-color="#0C0F15"/><stop offset="0.1875" stop-color="#0C0F16"/><stop offset="0.2500" stop-color="#0D1017"/><stop offset="0.3125" stop-color="#0E1219"/><stop offset="0.3750" stop-color="#0F131B"/><stop offset="0.4375" stop-color="#10151D"/><stop offset="0.5000" stop-color="#12161F"/><stop offset="0.5625" stop-color="#131721"/><stop offset="0.6250" stop-color="#141923"/><stop offset="0.6875" stop-color="#151A25"/><stop offset="0.7500" stop-color="#161C27"/><stop offset="0.8125" stop-color="#171D28"/><stop offset="0.8750" stop-color="#171D29"/><stop offset="0.9375" stop-color="#181E2A"/><stop offset="1.0000" stop-color="#181E2A"/></linearGradient></defs>
+  <rect width="3840" height="2160" fill="url(#ground)"/>
+</svg>

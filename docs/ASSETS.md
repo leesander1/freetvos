@@ -116,6 +116,53 @@ Only needed once `make iso` output is distributed.
 
 ## Producing the raster sizes
 
-Author the SVG, then generate every PNG from it rather than drawing each size
-by hand, so a change to the mark propagates everywhere in one step. A helper
-belongs in `tools/gen-assets.sh` once the source SVGs exist.
+Every PNG comes from an SVG, and none is drawn by hand, so a change to a master
+reaches every size in one step:
+
+```bash
+tools/gen-assets.sh          # the derived SVGs, every PNG, then a coverage check
+tools/gen-assets.sh png      # only the PNGs, after editing a master
+```
+
+It runs in a container holding `rsvg-convert` and Noto Sans, so nothing is
+installed on the machine running it, and the image build needs no rasteriser:
+it copies the finished PNGs. `make lint` runs the coverage check, which fails if
+a service has no tile or any PNG is missing or the wrong size.
+
+These are drawn by hand:
+
+| Master | What it is |
+|---|---|
+| `brand/icons/freetvos.svg` | The mark on its tile |
+| `brand/icons/freetvos-*.svg` | Every service and feature tile |
+| `brand/logo/freetvos-glyph.svg` | The mark without its tile |
+| `brand/logo/freetvos-mark-light.svg` | One colour, for light surfaces |
+| `brand/logo/freetvos-small.svg` | The mark redrawn for 24px and below |
+| `brand/splash/throbber.svg` | One spinner frame |
+
+The wordmarks, banners, wallpaper, splash background and installer art are SVGs
+too, written by `tools/gen-assets.py` from those masters and `brand/brand.env`.
+Their text is outlined from Noto Sans, the interface's own font, so no PNG
+depends on the fonts of whatever machine drew it. They are committed; edit what
+they are made from, not them.
+
+| Asset | Generated as | Read by |
+|---|---|---|
+| Mark, 512 down to 16 | `brand/png/hicolor/<size>/apps/freetvos.png` | os-release `LOGO=`, from `/usr/share/icons/hicolor` |
+| Tiles, 512 and 256 | `brand/png/hicolor/<size>/apps/freetvos-*.png` | The same, beside each tile's SVG |
+| Splash logo, 640 | `brand/png/splash/logo.png` | Plymouth, and the Plasma session splash |
+| Wallpaper, 4K and 1080p | `brand/png/wallpaper/` | The home screen |
+| Wordmark, dark and light | `brand/png/logo/freetvos-wordmark*.png` | Nothing in the image yet |
+| Mark on light | `brand/png/logo/freetvos-mark-light.png` | Nothing in the image yet |
+| Spinner, 24 frames at 128 | `brand/png/splash/throbber-*.png` | Nothing: the theme shows a still mark on purpose |
+| Splash background, 1080p | `brand/png/splash/background.png` | Nothing: the theme paints the colour itself |
+| Banners, 1600x900 | `brand/png/banners/freetvos-<id>.png` | Nothing yet: no screen has a featured row |
+| Installer sidebar, topbar, volume icon | `brand/png/installer/` | Nothing: bootc-image-builder's ISO takes no artwork |
+
+The small mark exists because the full one does not survive 16px: its stand and
+foot smear into one blob and the play symbol becomes a speck. The small drawing
+runs the tile to the edge and gives every part at least two pixels. It is used
+at 24px and below; from 32px the full mark reads.
+
+The service tiles are still recognisable versions of each service's own mark and
+colours. Read §4 before distributing an image that contains them.

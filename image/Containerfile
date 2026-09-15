@@ -158,6 +158,18 @@ COPY cast/dial/ /usr/share/freetvos/dial/
 # it stays sharp on a 4K panel, and it needs no rasteriser in the build.
 COPY brand/icons/ /usr/share/icons/hicolor/scalable/apps/
 
+# Every raster the image uses, drawn from the SVG masters in brand/ by
+# tools/gen-assets.sh, so the build copies pictures rather than drawing them.
+# The sized icons are what an icon looked up by name gets, which is how
+# os-release's LOGO= finds the mark; until now only the scalable SVG was
+# installed. The same splash logo goes to Plymouth and the Plasma session
+# splash, so boot and login show one picture.
+COPY brand/png/hicolor/ /usr/share/icons/hicolor/
+COPY brand/png/splash/logo.png /usr/share/plymouth/themes/freetvos/logo.png
+COPY brand/png/splash/logo.png \
+     /usr/share/plasma/look-and-feel/org.freetvos.bigscreen/contents/splash/images/logo.png
+COPY brand/png/wallpaper/ /usr/share/wallpapers/FreeTVOS/contents/images/
+
 COPY --from=qmlruntime /usr/lib64/qt6/bin/qml /usr/lib64/qt6/bin/qml
 
 COPY tools/vendor/widevine_patch.py /usr/share/freetvos/widevine/widevine_patch.py
@@ -183,17 +195,9 @@ RUN chmod 0755 /usr/bin/freetvos-webapp /usr/bin/freetvos-firstboot \
  && python3 /usr/share/freetvos/generate-desktop-entries.py \
  && python3 /usr/share/freetvos/curate-apps.py \
  && python3 /usr/share/freetvos/brand-os-release.py \
- && python3 /usr/share/freetvos/render-boot-logo.py \
-      /usr/share/plymouth/themes/freetvos/logo.png \
- && python3 /usr/share/freetvos/render-wallpaper.py \
-      /usr/share/wallpapers/FreeTVOS/contents/images/3840x2160.png 3840 2160 \
- && python3 /usr/share/freetvos/render-wallpaper.py \
-      /usr/share/wallpapers/FreeTVOS/contents/images/1920x1080.png 1920 1080 \
  && ln -sfn FreeTVOS /usr/share/wallpapers/Default \
  && python3 /usr/share/freetvos/tune-shell-defaults.py \
  && python3 /usr/share/freetvos/tune-homescreen.py \
- && cp /usr/share/plymouth/themes/freetvos/logo.png \
-      /usr/share/plasma/look-and-feel/org.freetvos.bigscreen/contents/splash/images/logo.png \
  && gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
 
 # ---------------------------------------------------------------------------

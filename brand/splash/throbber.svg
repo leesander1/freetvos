@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!-- One frame of a boot progress spinner. tools/gen-assets.py rotates it into
+       24 frames. The splash theme shows a still mark on purpose (see
+       freetvos.script), so nothing loads these frames yet; they exist so a
+       theme that wants motion has it. Strokes stay well above 2px. -->
+  <circle cx="64" cy="64" r="48" fill="none" stroke="#3DDC97" stroke-opacity="0.22" stroke-width="10"/>
+  <path d="M64 16A48 48 0 0 1 112 64" fill="none" stroke="#3DDC97" stroke-width="10" stroke-linecap="round"/>
+</svg>

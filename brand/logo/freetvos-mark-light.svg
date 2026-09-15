@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- The mark for light surfaces: one colour, the brand ground, with no tile
+       and the play symbol cut through so the page shows in it. Framed like
+       brand/icons/freetvos.svg, so the two swap without moving. -->
+  <path fill="#0B0E14" fill-rule="evenodd" d="M128 112H384A56 56 0 0 1 440 168V304A56 56 0 0 1 384 360H128A56 56 0 0 1 72 304V168A56 56 0 0 1 128 112ZM212 186L320 248L212 310Z"/>
+  <rect x="238" y="350" width="36" height="56" fill="#0B0E14"/>
+  <rect x="176" y="398" width="160" height="34" rx="17" fill="#0B0E14"/>
+</svg>

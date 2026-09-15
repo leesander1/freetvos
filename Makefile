@@ -69,6 +69,7 @@ lint:
 	@python3 tools/test-meet.py
 	@python3 tools/test-tuner.py
 	@python3 tools/test-pin.py
+	@python3 tools/gen-assets.py check
 	@echo "lint ok"
 
 clean:

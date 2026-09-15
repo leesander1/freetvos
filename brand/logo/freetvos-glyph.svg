@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="56 72 400 400" width="400" height="400">
+  <!-- The FreeTVOS mark without its tile: a screen with the play symbol cut
+       through it, on a stand. Transparent where the tile would be, so it sits
+       on the boot splash, the installer and in the wordmark alike.
+       brand/icons/freetvos.svg is the same drawing on its dark tile. The stem
+       starts inside the screen so no seam shows where the two shapes meet. -->
+  <path fill="#3DDC97" fill-rule="evenodd" d="M128 112H384A56 56 0 0 1 440 168V304A56 56 0 0 1 384 360H128A56 56 0 0 1 72 304V168A56 56 0 0 1 128 112ZM212 186L320 248L212 310Z"/>
+  <rect x="238" y="350" width="36" height="56" fill="#3DDC97"/>
+  <rect x="176" y="398" width="160" height="34" rx="17" fill="#3DDC97"/>
+</svg>

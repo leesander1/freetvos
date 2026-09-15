@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- The mark redrawn for 24px and below, where brand/icons/freetvos.svg
+       falls apart: at 16px its stand and foot smear into one blob, the play
+       symbol is a speck, and the tile's margin eats a third of the icon.
+       Here the tile runs to the edge, the screen and play symbol are larger,
+       and the stand is one thick bar, so every part is at least two pixels
+       at 16px. The same idea, not the same drawing: compare at 16px, not 512. -->
+  <rect width="512" height="512" rx="112" fill="#0B0E14"/>
+  <path fill="#3DDC97" fill-rule="evenodd" d="M104 72H408A56 56 0 0 1 464 128V312A56 56 0 0 1 408 368H104A56 56 0 0 1 48 312V128A56 56 0 0 1 104 72ZM196 142L340 220L196 298Z"/>
+  <rect x="140" y="400" width="232" height="64" rx="32" fill="#3DDC97"/>
+</svg>
