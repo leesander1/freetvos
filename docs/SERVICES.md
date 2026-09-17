@@ -5,7 +5,7 @@ build time. That is right for what the product ships with and wrong for
 everything else: wanting Spotify on your own television should not mean building
 an operating system.
 
-**Apps** on the home screen opens a catalogue of seventeen more services. Enter adds one,
+**Apps** on the home screen opens a catalogue of nineteen more services. Enter adds one,
 Enter again removes it. There is nothing to type, because typing with a d-pad is
 miserable and most people want one of the same few.
 

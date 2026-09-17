@@ -37,6 +37,19 @@ going to different places, which was already reported once as confusing.
 
 ## Game streaming
 
+Three ways to play, and the setup wizard offers all three in its Apps step.
+
+**GeForce NOW** and **Amazon Luna** play in the browser, so there is nothing to
+install: add them and sign in. Neither uses Widevine, but both check which
+browser they are in and refuse one they do not know, so their catalogue entries
+claim Chrome on ChromeOS, which both support. They are in the catalogue's Games
+group and land in the Games row on the home screen.
+
+**Moonlight** plays a game running on a PC in the house. The other half of it,
+**Sunshine**, runs on that PC and is what Moonlight connects to; it is not
+installed here and there is nothing to configure on the television for it.
+Pair the two the first time Moonlight opens.
+
 **Game Streaming** runs Moonlight, which plays a game running on a PC elsewhere
 in the house. It is not packaged for Fedora, so it arrives as a Flatpak,
 installed into the viewer's own directory: that needs no root, and under bootc it

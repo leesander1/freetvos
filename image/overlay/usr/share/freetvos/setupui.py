@@ -115,7 +115,9 @@ APPS_BODY = """
 <div class="msg" id="msg"></div>
 <p class="hint">Netflix, Prime Video, Disney+, Hulu, Apple TV+,
 Paramount+, Peacock, ESPN+, YouTube, YouTube TV, Plex and Jellyfin are already
-here. Back goes to the previous step.</p>
+here. GeForce NOW and Luna play games in the browser; Moonlight plays what is
+running on a PC in the house, which needs Sunshine installed on that PC. Back
+goes to the previous step.</p>
 <script>
 __NAV__
 const ITEMS = __ITEMS__;
@@ -186,7 +188,7 @@ function choose(i) {
       busy = false;
       if (r.error) { msg.className = 'msg bad'; msg.textContent = r.error; return; }
       it.on = adding;
-      msg.textContent = it.name + (adding ? ' added' : ' removed');
+      msg.textContent = r.note || (it.name + (adding ? ' added' : ' removed'));
       paint();
     });
 }
@@ -260,6 +262,12 @@ def run(setup) -> int:
         items = [{"id": entry["id"], "name": entry["name"],
                   "group": entry["group"], "on": entry["id"] in have}
                  for entry in service.catalog()]
+        # Moonlight is not a web app, so it is not in the catalogue, but this
+        # is where somebody deciding how they play games is looking. Its size
+        # is on the tile: two gigabytes is not a surprise to spring on someone.
+        items.append({"id": "moonlight", "name": "Moonlight",
+                      "group": "Games \u00b7 about 2 GB",
+                      "on": setup.moonlight_installed()})
         # First, not last. Twenty tiles between here and the end of the step
         # is a long way to travel to say you are finished, and the highlight
         # starts on the first app so the page still opens on something to pick.
@@ -300,6 +308,14 @@ def run(setup) -> int:
         return {"items": network_items()}
 
     def do_app(payload):
+        if payload.get("id") == "moonlight":
+            if payload.get("on"):
+                setup.moonlight_install()
+                return {"ok": True,
+                        "note": "Moonlight is downloading. It will be on the "
+                                "home screen when it finishes."}
+            setup.moonlight_remove()
+            return {"ok": True}
         service = setup.services()
         entry = next((c for c in service.catalog()
                       if c["id"] == payload.get("id")), None)
@@ -307,7 +323,8 @@ def run(setup) -> int:
             return {"error": "That app is no longer in the catalogue."}
         if payload.get("on"):
             service.add(entry["id"], entry["name"], entry["url"],
-                        entry.get("drm", "no"), entry["category"])
+                        entry.get("drm", "no"), entry["category"],
+                        agent=entry.get("agent", ""))
         else:
             service.remove(entry["id"])
         return {"ok": True}

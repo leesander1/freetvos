@@ -73,6 +73,12 @@ def main() -> int:
         check("music is grouped",
               sorted(e["id"] for e in entries if e["group"] == "Music")[:3],
               ["applemusic", "bandcamp", "deezer"])
+        check("games are grouped",
+              sorted(e["id"] for e in entries if e["group"] == "Games"),
+              ["geforcenow", "luna"])
+        check("and are filed where the home screen keeps games",
+              sorted({e["category"] for e in entries if e["group"] == "Games"}),
+              ["Game;"])
 
         print("naming")
         check("slug", svc.slug("Apple Music"), "applemusic")
@@ -117,6 +123,15 @@ def main() -> int:
         check("no browser agent when it needs no Widevine",
               "USER_AGENT" in (conf / "freetvos/webapps/myjellyfin.app").read_text(),
               False)
+
+        print("a service that is fussy about browsers")
+        gaming = next(e for e in entries if e["id"] == "geforcenow")
+        svc.add(gaming["id"], gaming["name"], gaming["url"], gaming["drm"],
+                gaming["category"], offline=True, agent=gaming.get("agent", ""))
+        gaming_body = (conf / "freetvos/webapps/geforcenow.app").read_text()
+        check("claims a browser it is served on", "CrOS" in gaming_body, True)
+        check("without being taken for a Widevine service",
+              'DRM="no"' in gaming_body, True)
 
         print("removing")
         check("removed", svc.remove("spotify"), True)

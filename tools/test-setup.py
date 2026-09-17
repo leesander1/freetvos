@@ -13,6 +13,7 @@ import importlib.util
 import os
 import sys
 import tempfile
+import time
 import types
 from pathlib import Path
 
@@ -173,6 +174,42 @@ def main() -> int:
         check("and it can be asked to run again", setup.done(), False)
         setup.reset()
         check("resetting twice is fine", setup.done(), False)
+
+        print("game streaming")
+        log = Path(tmp) / "moonlight.log"
+        missing = Path(tmp) / "moonlight-missing"
+        here = Path(tmp) / "moonlight-here"
+        missing.write_text(f'#!/bin/sh\necho "$1" >> {log}\n'
+                           '[ "$1" = status ] && echo "not installed"\nexit 0\n')
+        here.write_text(f'#!/bin/sh\necho "$1" >> {log}\n'
+                        '[ "$1" = status ] && echo "installed, version 6.1.0"\nexit 0\n')
+        for stub in (missing, here):
+            stub.chmod(0o755)
+
+        setup.MOONLIGHT = str(missing)
+        check("not there yet", setup.moonlight_installed(), False)
+        setup.MOONLIGHT = str(here)
+        check("there", setup.moonlight_installed(), True)
+
+        setup.MOONLIGHT = str(missing)
+        setup.moonlight_install()
+        # Two gigabytes: it is started and left running, so the wizard can
+        # carry on. Wait for the child rather than assume it has run yet.
+        for _ in range(40):
+            if log.exists() and "install" in log.read_text():
+                break
+            time.sleep(0.05)
+        check("installing starts it without waiting for it",
+              "install" in log.read_text(), True)
+        setup.moonlight_remove()
+        check("removing asks it to go", "remove" in log.read_text(), True)
+
+        setup.MOONLIGHT = str(Path(tmp) / "not-installed-at-all")
+        check("a command that is not there is not a crash",
+              setup.moonlight_installed(), False)
+        setup.moonlight_install()
+        setup.moonlight_remove()
+        check("and neither is asking it to do things", True, True)
 
     print()
     if failures:

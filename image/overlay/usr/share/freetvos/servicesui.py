@@ -252,7 +252,8 @@ def run(svc) -> int:
         if entry is None:
             return {"error": "That app is no longer in the catalogue."}
         svc.add(entry["id"], entry["name"], entry["url"],
-                entry.get("drm", "no"), entry["category"])
+                entry.get("drm", "no"), entry["category"],
+                agent=entry.get("agent", ""))
         return {"ok": True}
 
     def do_remove(payload):

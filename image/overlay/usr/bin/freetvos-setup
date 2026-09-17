@@ -222,6 +222,44 @@ def services():
 
 
 # ---------------------------------------------------------------------------
+# Moonlight, which is not a web app and so not in the catalogue.
+#
+# A Flatpak the size of a small operating system, fetched only when somebody
+# asks for it. The wizard offers it beside the cloud gaming services because
+# that is where somebody deciding how they play games is looking, and starts it
+# in the background: two gigabytes is not something to hold a wizard open for.
+# ---------------------------------------------------------------------------
+
+MOONLIGHT = os.environ.get("FREETVOS_MOONLIGHT_CMD", "/usr/bin/freetvos-moonlight")
+
+
+def moonlight_installed() -> bool:
+    try:
+        done = subprocess.run([MOONLIGHT, "status"], capture_output=True,
+                              text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return done.returncode == 0 and "not installed" not in done.stdout
+
+
+def moonlight_install() -> None:
+    """Start the download and return. It outlives the wizard on purpose: a
+    viewer who finishes setup and walks away still gets Moonlight."""
+    try:
+        subprocess.Popen([MOONLIGHT, "install"], start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        pass
+
+
+def moonlight_remove() -> None:
+    try:
+        subprocess.run([MOONLIGHT, "remove"], capture_output=True, timeout=120)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Commands.
 # ---------------------------------------------------------------------------
 

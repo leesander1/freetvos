@@ -312,9 +312,13 @@ def installed() -> dict:
 
 
 def write_service(service_id: str, name: str, url: str, drm: str,
-                  category: str, icon: Path) -> None:
+                  category: str, icon: Path, agent: str = "") -> None:
     USER_DEFS.mkdir(parents=True, exist_ok=True)
-    agent = CROS_AGENT if drm == "yes" else ""
+    # Widevine services need the agent to be served at all. Some others check
+    # which browser they are in without needing Widevine, and say so in the
+    # catalogue: the cloud gaming services refuse a browser they do not
+    # recognise, and Chrome on ChromeOS is one they both support.
+    agent = CROS_AGENT if drm == "yes" or agent == "chrome" else ""
     body = [f'NAME="{name}"', f'URL="{url}"',
             f'ICON="{icon}"', f'CATEGORY="{category}"', f'DRM="{drm}"']
     if agent:
@@ -354,9 +358,9 @@ def refresh_tiles() -> None:
 
 
 def add(service_id: str, name: str, url: str, drm: str, category: str,
-        offline: bool = False) -> dict:
+        offline: bool = False, agent: str = "") -> dict:
     icon = acquire_icon(service_id, name, url, offline=offline)
-    write_service(service_id, name, url, drm, category, icon)
+    write_service(service_id, name, url, drm, category, icon, agent)
     return {"id": service_id, "name": name, "icon": str(icon)}
 
 
@@ -402,6 +406,7 @@ def cmd_add(args) -> int:
         name, url = entry["name"], entry["url"]
         service_id = entry["id"]
         drm, category = entry.get("drm", "no"), entry["category"]
+        agent = entry.get("agent", "")
     else:
         if not (args.name and args.url):
             print("give a catalogue name, or both --name and --url",
@@ -413,8 +418,10 @@ def cmd_add(args) -> int:
         service_id = args.id or slug(name)
         drm = "yes" if args.drm else "no"
         category = args.category
+        agent = ""
 
-    result = add(service_id, name, url, drm, category, offline=args.no_icon)
+    result = add(service_id, name, url, drm, category, offline=args.no_icon,
+                 agent=agent)
     print(f"added {result['name']} as {result['id']}")
     print(f"  icon {result['icon']}")
     return 0

@@ -5,7 +5,12 @@
     "on the home screen; nothing here is installed until someone asks for it.",
     "drm marks the ones that need the Widevine module, which is only a note to",
     "the launcher: it decides whether to refuse early with a useful message",
-    "rather than opening a service that will show a black player."
+    "rather than opening a service that will show a black player.",
+    "agent \"chrome\" claims Chrome on ChromeOS, for the services that check",
+    "which browser they are in without needing Widevine: the cloud gaming",
+    "ones refuse a browser they do not recognise.",
+    "category comes from the group, so Games land in the home screen's own",
+    "games row beside Moonlight."
   ],
   "groups": [
     {
@@ -35,6 +40,14 @@
         {"id": "iplayer", "name": "BBC iPlayer", "url": "https://www.bbc.co.uk/iplayer", "drm": "yes"},
         {"id": "itvx", "name": "ITVX", "url": "https://www.itv.com/", "drm": "yes"},
         {"id": "archive", "name": "Internet Archive", "url": "https://archive.org/details/movies", "drm": "no"}
+      ]
+    },
+    {
+      "name": "Games",
+      "category": "Game;",
+      "services": [
+        {"id": "geforcenow", "name": "GeForce NOW", "url": "https://play.geforcenow.com/", "drm": "no", "agent": "chrome"},
+        {"id": "luna", "name": "Amazon Luna", "url": "https://luna.amazon.com/", "drm": "no", "agent": "chrome"}
       ]
     }
   ]

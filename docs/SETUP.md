@@ -8,7 +8,8 @@ Two steps and a way out of each:
 
 1. **Network.** A cable is detected and says so. Otherwise the networks in range
    are listed strongest first, with the password typed on screen.
-2. **Apps.** The catalogue of seventeen more services, ticked on and off.
+2. **Apps.** The catalogue of nineteen more services, ticked on and off, and
+   Moonlight, which is a download rather than a tile.
    Netflix, Prime Video, Disney+, Hulu, Apple TV+, Paramount+, Peacock, ESPN+,
    YouTube, YouTube TV, Plex and Jellyfin are already there.
 

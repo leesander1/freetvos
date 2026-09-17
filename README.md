@@ -29,7 +29,7 @@ and `python3 tools/showcase.py demo` take them again.
 | ![The home screen](docs/images/home.png) | ![The first-run wizard](docs/images/setup.png) |
 | **Home.** Twelve streaming services and every feature, on Plasma Bigscreen. | **Setup Wizard.** Opens by itself the first time the television is turned on. |
 | ![Typing a wifi password on screen](docs/images/setup-keyboard.png) | ![The app catalogue](docs/images/apps.png) |
-| **Typing with a remote.** The page draws its own keyboard. The network names are stand-ins, as the VM has no radio. | **Customizable Apps/Services.** Seventeen more services a press away, or any site by its address. |
+| **Typing with a remote.** The page draws its own keyboard. The network names are stand-ins, as the VM has no radio. | **Customizable Apps/Services.** Nineteen more services a press away, including cloud gaming, or any site by its address. |
 | ![Live scores](docs/images/scores.png) | ![One game](docs/images/scores-game.png) |
 | **Sports App.** Live games first, refreshing on their own, with the teams you follow above everything. | **Sports Game Details.** The clock, the down and distance, the last play, and a button to follow either side. |
 | ![Your own media](docs/images/library.png) | ![External inputs](docs/images/inputs.png) |
@@ -109,7 +109,7 @@ See `docs/SETUP.md`.
 
 ## Adding an app
 
-**Apps** on the home screen opens a catalogue of twenty services; Enter adds one
+**Apps** on the home screen opens a catalogue of nineteen services; Enter adds one
 and Enter again removes it. Anything else goes in by name and web address. A
 service added this way lives entirely in the user's own directories, so it needs
 no rebuild and survives updates. See `docs/SERVICES.md`.
