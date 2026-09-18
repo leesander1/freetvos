@@ -77,7 +77,10 @@ RUN dnf remove -y plasma-welcome || true
 # RPM Fusion. Not optional for a media appliance: Fedora cannot ship the
 # patent-encumbered ffmpeg that gstreamer1-libav wraps, and without it UxPlay
 # refuses to start at all because it has no H.264 decoder for the AirPlay
-# stream. The same repo carries the VAAPI drivers real hardware decode needs.
+# stream. The same repo carries the VAAPI drivers real hardware decode needs:
+# Fedora's own mesa-va-drivers is built without H.264 and HEVC, so on an AMD
+# GPU most streaming video would decode on the processor. The freeworld build
+# is the same driver with those codecs left in.
 RUN dnf install -y \
       "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm" \
  && dnf clean all
@@ -90,7 +93,7 @@ RUN dnf install -y --setopt=install_weak_deps=False \
       gstreamer1-plugins-bad-free \
       gstreamer1-vaapi \
       mesa-dri-drivers \
-      mesa-va-drivers \
+      mesa-va-drivers-freeworld \
       libva libva-utils \
       mpv \
       v4l-utils \
