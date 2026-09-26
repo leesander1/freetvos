@@ -1,0 +1,108 @@
+# An x86_64 installer ISO, built where x86_64 is native.
+#
+# A Mac with Apple Silicon can build the x86_64 container image under
+# emulation, but not a bootable disk from it (docs/INSTALL.md records why), and
+# loading the 6 GB image by hand on a live USB runs out of memory: the live
+# session holds its files in RAM, and podman load needs about twice the image.
+# A GitHub runner is a real x86_64 machine, so bootc-image-builder works here
+# as it was meant to, and the result is one ISO to write to a stick and boot.
+#
+# Widevine is left out. The repository is public and the module's licence does
+# not allow redistributing it, so an image built here must not carry it. The
+# television fetches it itself on first boot instead, as the image already does
+# whenever it is built without the module.
+
+name: Installer ISO
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "image/**"
+      - "brand/**"
+      - "webapps/**"
+      - "cast/**"
+      - ".github/workflows/installer.yml"
+
+# A new push supersedes a build still running for an older one.
+concurrency:
+  group: installer-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  iso:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      # The image is about 6 GB, and building the ISO holds several copies of
+      # it at once. The runner's disk starts mostly full of toolchains this job
+      # does not use.
+      - name: Make room on the runner
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          sudo docker image prune -af >/dev/null 2>&1 || true
+          df -h /
+
+      - name: Leave Widevine out of this build
+        run: |
+          sed -i 's/^BUNDLE_WIDEVINE=.*/BUNDLE_WIDEVINE="no"/' brand/brand.env
+          grep '^BUNDLE_WIDEVINE=' brand/brand.env
+
+      - name: Build the image
+        run: sudo tools/build.sh amd64
+
+      # Unattended, and it only ever erases nvme0n1: the one M.2 SSD a
+      # Framework mainboard has. Every other disk is ignored, so the USB stick
+      # it boots from cannot be chosen, and a machine without that drive stops
+      # instead of installing somewhere else. No account settings: the image
+      # already creates the tv account and logs it in.
+      - name: Installer settings
+        run: |
+          mkdir -p output
+          cat > output/config.toml <<'EOF'
+          [customizations.installer.kickstart]
+          contents = """
+          text --non-interactive
+          ignoredisk --only-use=nvme0n1
+          zerombr
+          clearpart --all --initlabel --disklabel=gpt --drives=nvme0n1
+          autopart --noswap --type=plain
+          rootpw --lock
+          reboot --eject
+          """
+          EOF
+          cat output/config.toml
+
+      - name: Build the installer ISO
+        run: |
+          . brand/brand.env
+          sudo podman run --rm --privileged \
+            --security-opt label=type:unconfined_t \
+            -v "$PWD/output:/output" \
+            -v "$PWD/output/config.toml:/config.toml:ro" \
+            -v /var/lib/containers/storage:/var/lib/containers/storage \
+            quay.io/centos-bootc/bootc-image-builder:latest \
+              --type anaconda-iso \
+              --local \
+              "${IMAGE_REF}:${BRAND_VERSION}-amd64"
+          sudo mv output/bootiso/install.iso output/freetvos-amd64-installer.iso
+          sudo chown "$USER" output/freetvos-amd64-installer.iso
+          ls -lh output/freetvos-amd64-installer.iso
+          sha256sum output/freetvos-amd64-installer.iso | tee output/freetvos-amd64-installer.iso.sha256
+
+      - name: Offer the ISO for download
+        uses: actions/upload-artifact@v4
+        with:
+          name: freetvos-amd64-installer
+          path: |
+            output/freetvos-amd64-installer.iso
+            output/freetvos-amd64-installer.iso.sha256
+          compression-level: 0
+          retention-days: 14

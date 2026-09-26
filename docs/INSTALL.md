@@ -28,6 +28,34 @@ result that still runs at emulation speed.
 
 Installing on the machine itself takes minutes and is the shorter path anyway.
 
+## The easy way: an installer built on GitHub
+
+`.github/workflows/installer.yml` builds an installer ISO on a GitHub x86_64
+runner, where none of the problems above exist. It runs on every push that
+changes the image, and can be started by hand from the repository's Actions
+tab.
+
+1. Open the latest **Installer ISO** run under Actions and download the
+   `freetvos-amd64-installer` artifact. It is a zip holding the ISO and its
+   SHA-256.
+2. Write the ISO to a USB stick with Fedora Media Writer, choosing
+   "Select .iso file". Anything on the stick is erased.
+3. Boot the target machine from the stick (F12 on a Framework). The install is
+   unattended and reboots into FreeTVOS when it is done.
+
+**It erases `nvme0n1` without asking.** That is the single M.2 SSD in a
+Framework mainboard, and the installer is told to ignore every other disk, so
+the USB stick cannot be chosen and a machine with no `nvme0n1` stops rather
+than installing anywhere else. Do not boot it on a machine whose SSD you want
+to keep.
+
+An image built there leaves Widevine out, because the repository is public and
+the module may not be redistributed. The television fetches it itself on first
+boot; `freetvos-widevine-check` shows when it has arrived.
+
+The rest of this page is the manual route, for a machine that is not a
+Framework or a build that has to include something the public one cannot.
+
 ## Getting the image onto the machine
 
 Either push it to a registry, or carry it on a USB stick. The stick needs no
