@@ -39,6 +39,18 @@ function serviceWindows() {
     return out;
 }
 
+/*
+ * Whatever just opened is what the viewer is now using. A window started by a
+ * service rather than by a keypress carries no activation token, so KWin's
+ * focus stealing prevention leaves it unfocused and can stack it behind what
+ * was there: the first-run wizard, opened at login, was the case that showed
+ * it. On a television there is no other window the viewer could have been
+ * typing into, so every new normal window is simply made active.
+ */
+workspace.windowAdded.connect(function (w) {
+    if (w && w.normalWindow) workspace.activeWindow = w;
+});
+
 function workArea() {
     return workspace.clientArea(KWin.MaximizeArea, workspace.activeScreen,
                                 workspace.currentDesktop);

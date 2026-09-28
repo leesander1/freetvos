@@ -78,12 +78,26 @@ the autologin block already there, and add
 ## 4. Session splash
 
 This is the one worth spending effort on. It is on screen for several seconds
-on modest hardware, and it currently shows the KDE and Plasma logos.
+on modest hardware.
 
-Copy `org.kde.plasma.bigscreen` to a `org.freetvos.bigscreen` look-and-feel
-package and replace the images its `Splash.qml` draws: `logo-big.svg`,
-`kde.svgz`, `plasma.svgz`, and the `busywidget` spinner. Keeping the package
-structure identical means inheriting the upstream layout and timing for free.
+**Done**, and not the way first planned. `org.freetvos.bigscreen` carries a
+splash, but selecting it does nothing: the Bigscreen session pins its own
+look-and-feel, `org.kde.plasma.bigscreen`, in a locked setting, and Plasma
+copies that package's splash choice into the viewer's `kdedefaults`, which
+outranks `/etc/xdg`. A `ksplashrc` there was read and ignored, and the KDE and
+Plasma logos kept showing. Swapping the whole look-and-feel would also swap the
+home screen's layout, which the FreeTVOS package does not carry.
+
+So the build replaces the `contents/splash` directory inside Bigscreen's own
+package with FreeTVOS's. Whichever package Plasma picks, it draws the FreeTVOS
+mark on the brand ground. The FreeTVOS package also declares
+`KPackageStructure`, which Plasma 6 expects in place of `ServiceTypes`.
+
+The boot splash, surface 2, needed the initramfs rebuilt in the image: Plymouth
+starts inside it, and the base image's was built before the FreeTVOS theme
+existed, so early boot showed Fedora's theme. An installed system also needs
+`quiet splash` on its kernel command line for Plymouth to draw at all; the
+installer ISO now sets it.
 
 Consider dropping the busy spinner entirely. Apple TV and Roku both show a
 static mark, and a still logo reads as faster than an animated one because

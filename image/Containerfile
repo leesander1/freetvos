@@ -150,6 +150,7 @@ RUN dnf install -y --setopt=install_weak_deps=False \
       chromium \
       NetworkManager-wifi \
       plymouth plymouth-system-theme \
+      plymouth-plugin-script \
       libcec \
       python3 \
       google-noto-sans-fonts \
@@ -228,6 +229,19 @@ RUN chmod 0755 /usr/bin/freetvos-webapp /usr/bin/freetvos-firstboot \
  && python3 /usr/share/freetvos/tune-homescreen.py \
  && gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
 
+# The splash between logging in and the home screen. The Bigscreen session pins
+# its own look-and-feel, org.kde.plasma.bigscreen, and Plasma copies that
+# package's splash choice into the viewer's kdedefaults, which outranks any
+# ksplashrc in /etc/xdg; so the KDE and Plasma logos showed whatever FreeTVOS
+# asked for. Swapping the whole look-and-feel would also swap the home screen's
+# layout, which FreeTVOS's package does not carry. Replacing only the splash
+# inside Bigscreen's package draws the FreeTVOS one whichever package is chosen.
+# A step of its own, not part of the one above, whose "|| true" would hide it.
+RUN B=/usr/share/plasma/look-and-feel/org.kde.plasma.bigscreen/contents/splash \
+ && F=/usr/share/plasma/look-and-feel/org.freetvos.bigscreen/contents/splash \
+ && test -f "$F/Splash.qml" && test -f "$F/images/logo.png" \
+ && rm -rf "$B" && cp -a "$F" "$B"
+
 # ---------------------------------------------------------------------------
 # Services. sddm auto-logs into the Bigscreen session; a TV has no login screen.
 # ---------------------------------------------------------------------------
@@ -272,6 +286,27 @@ RUN systemctl enable sddm avahi-daemon bluetooth NetworkManager sshd \
 # become a one-time factory default rather than real state.
 # /run/secrets and the resolver stub are podman's own bind mounts and cannot
 # be removed here, so clear only what the package installs actually left behind.
+# The boot splash from the very first frame. Plymouth starts inside the
+# initramfs, and the base image's initramfs was built before the FreeTVOS theme
+# existed, so boots showed Fedora's theme (the firmware logo and a Fedora mark)
+# until the root filesystem took over. Rebuilding it here picks up the theme
+# plymouthd.conf selects. The theme is a script theme, and Plymouth only
+# copies a theme whose plugin is installed: without plymouth-plugin-script the
+# theme's folder arrived empty and the boot logo had never once been drawn.
+# DRACUT_NO_XATTR because a container build cannot set
+# the extended attributes dracut otherwise tries to copy. /root is a link to
+# /var/roothome on this image and /var is empty while building, so dracut's
+# attempt to copy /root fails until the folder exists; it is made for the
+# rebuild and removed again, since /var must be empty in the finished image.
+RUN set -e; KVER="$(ls /usr/lib/modules)"; \
+    test "$(printf '%s\n' "$KVER" | wc -l)" -eq 1; \
+    grep -q '^Theme=freetvos' /etc/plymouth/plymouthd.conf; \
+    mkdir -p /var/roothome; \
+    env DRACUT_NO_XATTR=1 dracut --force --no-hostonly --add plymouth \
+      "/usr/lib/modules/$KVER/initramfs.img" "$KVER"; \
+    rm -rf /var/roothome /var/tmp/dracut.*; \
+    lsinitrd "/usr/lib/modules/$KVER/initramfs.img" | grep -q 'plymouth/themes/freetvos/logo.png'
+
 RUN rm -rf /var/cache/* /var/log/* /var/tmp/* /tmp/* \
       /run/dnf /run/sddm /run/tuned \
       /var/lib/dnf /var/lib/authselect/checksum \

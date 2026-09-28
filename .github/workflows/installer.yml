@@ -75,6 +75,10 @@ jobs:
       # writes multi-user.target as the default over the image's graphical
       # one, so SDDM never starts and the box stops at "fedora login:". The
       # %post makes it certain even if a later Anaconda ignores xconfig.
+      #
+      # The bootloader line gives an installed system the same kernel options
+      # as the VM's disk: quiet and splash hand the boot to the FreeTVOS
+      # Plymouth theme instead of a screen of scrolling text.
       - name: Installer settings
         run: |
           mkdir -p output
@@ -88,6 +92,7 @@ jobs:
           autopart --noswap --nohome --type=plain
           rootpw --lock
           xconfig --startxonboot
+          bootloader --append="quiet splash rd.systemd.show_status=false plymouth.ignore-serial-consoles"
           reboot --eject
           %post
           systemctl set-default graphical.target

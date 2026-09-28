@@ -1,16 +1,17 @@
 [Unit]
 Description=Set the television up the first time it is turned on
 PartOf=graphical-session.target
-After=graphical-session.target
+# As soon as the shell is up, so the wizard is the first thing on screen rather
+# than something that opens over a home screen already showing. It used to wait
+# twelve seconds on the belief that a window mapped this early lands behind the
+# shell; the actual cause was focus stealing prevention, which the KWin script
+# now overrides by activating every new window.
+After=graphical-session.target plasma-plasmashell.service
 
 [Service]
-# Delayed because the shell has to be drawing before anything opens on top of
-# it; a window that maps into a session still starting up lands behind it.
-#
 # --once does nothing at all if setup has already been done, so this unit is
 # harmless on every boot after the first.
 Type=oneshot
-ExecStartPre=/usr/bin/sleep 12
 ExecStart=/usr/bin/freetvos-setup run --once
 RemainAfterExit=no
 
