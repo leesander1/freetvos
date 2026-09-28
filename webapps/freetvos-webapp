@@ -146,6 +146,17 @@ fi
 # Several services serve a degraded player, or refuse entirely, when they see
 # Linux. The override is per-app because the ones that do not check are better
 # left honest.
+#
+# And per architecture, because the agent that works on an ARM board can be
+# the wrong one on a PC. USER_AGENT_X86_64 in a service's file replaces
+# USER_AGENT on x86_64, and set but empty means the browser's own. YouTube TV
+# is the case: told it was Chrome 120 on an ARM Chromebook by an x86 Linux
+# Chromium 154, whose client hints say otherwise, it refused live channels
+# with "This format is not supported" even with Widevine and every codec in
+# place. A Linux PC is a platform it supports as it is.
+if [ "$(uname -m)" = "x86_64" ] && [ -n "${USER_AGENT_X86_64+set}" ]; then
+  USER_AGENT="$USER_AGENT_X86_64"
+fi
 [ -n "$USER_AGENT" ] && FLAGS+=( "--user-agent=$USER_AGENT" )
 
 # D-pad navigation for sites without their own arrow-key handling. Left off by

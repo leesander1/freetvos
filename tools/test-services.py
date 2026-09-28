@@ -237,6 +237,28 @@ def main() -> int:
         check("a damaged sign-in file is treated as none",
               jf.target()[-1], "/jellyfin-address")
 
+    print("browser identity by architecture")
+    launcher = (REPO / "webapps/freetvos-webapp").read_text()
+    check("an x86_64 agent replaces the ARM one on a PC",
+          'if [ "$(uname -m)" = "x86_64" ] && [ -n "${USER_AGENT_X86_64+set}" ]; then'
+          in launcher, True)
+    check("and is applied before the flag is built",
+          launcher.index("USER_AGENT_X86_64+set") < launcher.index('"--user-agent=$USER_AGENT"'),
+          True)
+    import subprocess
+    probe = ('USER_AGENT="cros"; . "$1"; '
+             'if [ "$2" = "x86_64" ] && [ -n "${USER_AGENT_X86_64+set}" ]; then '
+             'USER_AGENT="$USER_AGENT_X86_64"; fi; printf "%s" "$USER_AGENT"')
+    ytv = REPO / "webapps/apps.d/youtubetv.app"
+    agent = lambda app, arch: subprocess.run(
+        ["bash", "-c", probe, "_", str(app), arch],
+        capture_output=True, text=True).stdout
+    check("YouTube TV is the browser itself on a PC", agent(ytv, "x86_64"), "")
+    check("and keeps the Chromebook agent on ARM",
+          "CrOS aarch64" in agent(ytv, "aarch64"), True)
+    check("other services are unchanged on a PC",
+          "CrOS aarch64" in agent(REPO / "webapps/apps.d/netflix.app", "x86_64"), True)
+
     print()
     if failures:
         print(f"{len(failures)} check(s) failed")

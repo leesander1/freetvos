@@ -4,4 +4,6 @@ ICON="freetvos-youtubetv"
 CATEGORY="AudioVideo;Video;Player;TV;"
 DRM="yes"
 USER_AGENT="Mozilla/5.0 (X11; CrOS aarch64 15236.80.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+# The browser's own identity on a PC. See USER_AGENT_X86_64 in freetvos-webapp.
+USER_AGENT_X86_64=""
 SPATIAL_NAV="yes"
