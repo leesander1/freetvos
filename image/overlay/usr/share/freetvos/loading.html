@@ -1,0 +1,65 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>FreeTVOS</title>
+<!--
+  What a FreeTVOS page's window opens on, before the page itself.
+
+  The page is served by a small program on this television, started a moment
+  before its window. The window used to point straight at it, and when the
+  program was not answering yet, or had already gone, Chrome filled the screen
+  with its own "This site can't be reached" page. This waits for the program's
+  /__ready picture, then goes to the page; if it never answers, it says so in
+  plain words instead.
+
+  The page's address follows the #, and only one on this television is
+  followed.
+-->
+<style>
+  html, body { margin: 0; height: 100%; background: #0B0E14; color: #E6EAF2;
+               font: 400 24px/1.5 "Noto Sans", system-ui, sans-serif; overflow: hidden; }
+  main { height: 100%; display: grid; place-items: center; }
+  .box { display: grid; justify-items: center; gap: 28px; text-align: center; }
+  .box img { height: 72px; }
+  .msg { color: #8C97AB; max-width: 34ch; }
+  .msg.bad { color: #E6EAF2; }
+  .dots::after { content: ""; animation: dots 1.2s steps(4) infinite; }
+  @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+  @media (prefers-reduced-motion: reduce) { .dots::after { animation: none; content: "..."; } }
+</style>
+<main>
+  <div class="box">
+    <img src="file:///usr/share/freetvos/brand/freetvos-wordmark.svg" alt="FreeTVOS"
+         onerror="this.remove()">
+    <div class="msg" id="msg"><span class="dots">Opening</span></div>
+  </div>
+</main>
+<script>
+  (function () {
+    var target = decodeURIComponent(location.hash.slice(1));
+    var msg = document.getElementById("msg");
+    var started = Date.now();
+    var GIVE_UP_MS = 20000;
+
+    function fail() {
+      msg.className = "msg bad";
+      msg.textContent = "This page did not open. Press Back to return to the " +
+                        "home screen, then try it again.";
+    }
+
+    // Only a page served on this television.
+    var match = /^http:\/\/(localhost|127\.0\.0\.1):\d+\//.exec(target);
+    if (!match) { fail(); return; }
+    var ready = match[0] + "__ready";
+
+    function attempt() {
+      var probe = new Image();
+      probe.onload = function () { location.replace(target); };
+      probe.onerror = function () {
+        if (Date.now() - started > GIVE_UP_MS) fail();
+        else setTimeout(attempt, 250);
+      };
+      probe.src = ready + "?t=" + Date.now();
+    }
+    attempt();
+  })();
+</script>

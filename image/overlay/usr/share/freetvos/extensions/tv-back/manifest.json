@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "FreeTVOS back",
+  "version": "1.0",
+  "description": "Backspace goes back a page, and leaves the service when there is nowhere to go back to",
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [{
+    "matches": ["http://*/*", "https://*/*"],
+    "js": ["back.js"],
+    "run_at": "document_start",
+    "all_frames": false
+  }]
+}

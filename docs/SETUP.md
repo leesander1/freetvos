@@ -23,8 +23,11 @@ walking away from it. A wizard that returns on every boot until it is completed
 is a wizard nobody can get past, and there is no support line to ring.
 
 `freetvos-setup reset` lets it run again. The unit behind it is
-`freetvos-setup.service`, started twelve seconds into the session, because a
-window that maps into a session still starting up lands behind the shell.
+`freetvos-setup.service`, started as soon as the shell is, so the wizard is the
+first thing on screen. It used to wait twelve seconds, which showed the home
+screen first; a window opened that early was landing behind the shell because
+of KWin's focus stealing prevention, and the FreeTVOS KWin script now makes
+every newly opened window the active one.
 
 ## The keyboard is the page's own
 
@@ -38,6 +41,11 @@ So the pages draw their own: a grid of characters walked with the arrow keys,
 which is what televisions did before any of this existed and which cannot fail
 to appear. It is in the shared page module, so every text field on this system
 uses it. A keyboard plugged into the box still types straight through.
+
+Once you type on a real keyboard, **Enter means Done**, as in any text box. It
+used to press whichever on-screen key was highlighted, which added a stray
+character to the end of a typed wifi password. Pressing an arrow key hands Enter
+back to the on-screen keys, so a remote works the same as always.
 
 ## What has been tested
 

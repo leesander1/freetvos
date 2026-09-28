@@ -90,7 +90,7 @@ function draw(at) {
     cells.push(el);
     el.dataset.row = ROWS.indexOf(r);
   });
-  nav = tvnav(cells, choose, () => history.back(), at || 0);
+  nav = tvnav(cells, choose, tvback, at || 0);
   return cells;
 }
 

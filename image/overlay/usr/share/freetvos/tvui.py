@@ -22,6 +22,7 @@ import json
 import os
 import re
 import socket
+import signal
 import subprocess
 import time
 import threading
@@ -157,6 +158,21 @@ STYLE = """
 # different tile sizes has no single column count, and guessing one sends the
 # focus sideways off the end of a row into nothing.
 NAV_JS = """
+// Close this page's window. The page's own program ends with it, so whatever
+// opened it carries on, which on a television means the home screen again.
+function tvleave() {
+  fetch('/__leave', { method: 'POST', body: '{}' });
+}
+
+// Back one page, or out altogether when there is no page to go back to. Back on
+// a page's first screen used to do nothing, because history.back() had nowhere
+// to go, and Backspace on a keyboard seemed not to work at all.
+function tvback() {
+  const before = location.href;
+  history.back();
+  setTimeout(() => { if (location.href === before) tvleave(); }, 400);
+}
+
 function tvnav(cells, onChoose, onBack, start) {
   // A starting position, so a page that rebuilds itself on a timer can put the
   // highlight back where the viewer left it rather than at the top.
@@ -193,7 +209,10 @@ function tvnav(cells, onChoose, onBack, start) {
     else if (e.key === 'ArrowDown') move(0, 1);
     else if (e.key === 'ArrowUp') move(0, -1);
     else if (e.key === 'Enter') onChoose(index);
-    else if (e.key === 'Backspace' && onBack) onBack();
+    // Backspace on a keyboard and Escape both mean Back. A page with nowhere
+    // of its own to go back to closes instead of ignoring the key.
+    else if (e.key === 'Backspace' || e.key === 'Escape' || e.key === 'BrowserBack')
+      (onBack || tvleave)();
     else return;
     e.preventDefault();
   };
@@ -236,6 +255,11 @@ function tvkeyboard(opts) {
   let value = opts.value || '';
   let upper = false;
   let row = 1, col = 0;
+  // Typed on a real keyboard since the arrows were last used. Then Enter means
+  // Done, as it would in any text box; it used to type the highlighted key of
+  // the on-screen grid into the password instead. The arrows hand Enter back to
+  // the grid, so a remote works exactly as before.
+  let typing = false;
 
   const box = document.createElement('div');
   box.className = 'kb';
@@ -299,14 +323,18 @@ function tvkeyboard(opts) {
   }
 
   const handler = e => {
+    if (e.key.startsWith('Arrow')) typing = false;
     if (e.key === 'ArrowRight') move(0, 1);
     else if (e.key === 'ArrowLeft') move(0, -1);
     else if (e.key === 'ArrowDown') move(1, 0);
     else if (e.key === 'ArrowUp') move(-1, 0);
+    else if (e.key === 'Enter' && typing) { close(); if (opts.onDone) opts.onDone(value); }
     else if (e.key === 'Enter') press();
     else if (e.key === 'Backspace') { value = value.slice(0, -1); render(); }
     else if (e.key === 'Escape') { close(); if (opts.onCancel) opts.onCancel(); }
-    else if (e.key.length === 1) { value += e.key; render(); }
+    else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      typing = true; value += e.key; render();
+    }
     else return;
     e.preventDefault();
     e.stopImmediatePropagation();
@@ -357,6 +385,56 @@ def find_brand(name: str):
     return None, None
 
 
+# A 1x1 transparent GIF, all /__ready has to return.
+READY_GIF = bytes.fromhex(
+    "47494638396101000100800000000000ffffff21f90401000000002c00000000"
+    "010001000002024401003b")
+
+LOADING = Path(os.environ.get("FREETVOS_LOADING_PAGE",
+                              "/usr/share/freetvos/loading.html"))
+
+
+def close_stale_browser(profile: Path, wait: float = 4.0) -> None:
+    """Close any browser still holding this page's profile.
+
+    Chromium started on a profile that is already open hands its address to
+    the copy already running and exits. The page's program took that exit for
+    the window closing and stopped serving, and the old copy then opened the
+    page on a server that was gone: "This site can't be reached", every second
+    time a page was opened, while the last one's browser was still closing.
+    """
+    marker = f"--user-data-dir={profile}"
+    try:
+        # Anchored at the end: a profile named after this one with more on the
+        # end belongs to another page and must be left alone.
+        found = subprocess.run(["pgrep", "-f", "--", re.escape(marker) + "( |$)"],
+                               capture_output=True, text=True).stdout.split()
+    except OSError:
+        return
+    pids = [int(p) for p in found if p.isdigit() and int(p) != os.getpid()]
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+    deadline = time.time() + wait
+    while pids and time.time() < deadline:
+        pids = [p for p in pids if Path(f"/proc/{p}").exists()]
+        time.sleep(0.1)
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+    # A killed browser leaves its lock behind, and the next one then asks
+    # whether the profile is in use by another computer.
+    for name in ("SingletonLock", "SingletonSocket", "SingletonCookie"):
+        try:
+            (profile / name).unlink()
+        except OSError:
+            pass
+
+
 class App:
     """A set of routes, served to one fullscreen browser window."""
 
@@ -400,6 +478,10 @@ class App:
 
             def do_GET(self):
                 path = urlparse(self.path).path
+                if path == "/__ready":
+                    # What the loading page waits for before showing the page.
+                    self._send(200, READY_GIF, "image/gif")
+                    return
                 if path.startswith("/icon/"):
                     # Served from here rather than linked as file://, which a
                     # page loaded over http is not allowed to reach.
@@ -434,6 +516,12 @@ class App:
 
             def do_POST(self):
                 path = urlparse(self.path).path
+                if path == "/__leave":
+                    # Back from a page with nowhere to go back to. Ends the
+                    # page's program with no answer, as closing the window does.
+                    self._send(200, b"{}", "application/json")
+                    app._done.set()
+                    return
                 handler = app._post.get(path)
                 if handler is None:
                     self._send(404)
@@ -470,9 +558,16 @@ class App:
         profile = Path(os.environ.get("XDG_DATA_HOME",
                                       Path.home() / ".local/share")) \
             / f"freetvos/webapps/_ui-{self.profile}"
+        close_stale_browser(profile)
+        url = f"http://localhost:{port}{start}"
+        # Opened on the loading page, which moves to the page once it answers,
+        # rather than on the page directly, which showed Chrome's own error
+        # screen whenever the page was not answering.
+        app_url = (LOADING.as_uri() + "#" + urllib.parse.quote(url, safe="")
+                   if LOADING.exists() else url)
         browser = subprocess.Popen([
             "/usr/bin/chromium-browser",
-            f"--app=http://localhost:{port}{start}",
+            f"--app={app_url}",
             f"--user-data-dir={profile}",
             # Not freetvos-<service>: the split view treats those as panes, and
             # a settings page tiled beside a film is not what anyone asked for.

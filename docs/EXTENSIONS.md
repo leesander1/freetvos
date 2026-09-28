@@ -16,7 +16,13 @@ One caveat worth re-checking after a Chromium update. Google disabled
 Chromium 152 build still honours it, verified by loading a probe extension and
 watching it run, but that is a thing that could change under you.
 
-## The two that ship
+## The three that ship
+
+`tv-back` makes Backspace on a keyboard work as Back: back a page, and out of the
+service when there is no page to go back to. It acts only when the page has not
+used the key itself and nobody is typing in a field. Closing the service's
+window needs its background worker, because a page cannot close a window it did
+not open.
 
 `tv-focus` draws a focus ring a television can see, and a border around the pane
 in focus in split view.

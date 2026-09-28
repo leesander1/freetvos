@@ -140,9 +140,9 @@ function choose(i) {
              msg.textContent = r.message || ''; }
     });
 }
-if (cells.length) tvnav(cells, choose, () => history.back());
+if (cells.length) tvnav(cells, choose, tvback);
 else addEventListener('keydown', e => {
-  if (e.key === 'Backspace') { history.back(); e.preventDefault(); }
+  if (e.key === 'Backspace') { tvback(); e.preventDefault(); }
 });
 </script>
 """
