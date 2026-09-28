@@ -28,6 +28,15 @@ SPEEDS = [("80", "Slow"), ("140", "Normal"), ("220", "Fast")]
 NAMES = {"stocks": "Stock prices", "sports": "Live scores",
          "custom": "Your own bar"}
 
+SIZES = [("full", "Full"), ("thin", "Thin")]
+LAYOUTS = [("stacked", "Stacked, every bar at once"),
+           ("rotate", "One bar, taking turns")]
+TURNS = [("15", "Every 15 seconds"), ("20", "Every 20 seconds"),
+         ("30", "Every 30 seconds"), ("60", "Every minute")]
+
+# Rows that belong to no bar: how the bars are drawn, and adding one.
+DISPLAY = "_display"
+
 BODY = """
 <h1>Tickers</h1>
 <p class="step">Bars along the bottom of the screen, stacked in this order.</p>
@@ -113,7 +122,7 @@ function cycle(delta) {
 
 function choose(i) {
   const r = rowFor(i);
-  if (r.kind === 'action' && r.action === 'stocks') { location.href = '/stocks'; return; }
+  if (r.kind === 'action' && r.action === 'stocks') { location.href = '/stocks?bar=' + encodeURIComponent(r.bar); return; }
   if (r.kind === 'choice') { cycle(1); return; }
   if (r.kind === 'action') { send({ bar: r.bar, action: r.action }); return; }
   tvkeyboard({
@@ -324,6 +333,19 @@ def save_stocks(bars_module, chosen: list) -> str:
     return f"{count} on the ticker" if count else "Ticker is empty"
 
 
+def bar_name(data: dict, bar: dict) -> str:
+    """What a bar is called on the page: its title if it has one, and custom
+    bars numbered when there is more than one, so two can be told apart."""
+    if bar["kind"] != "custom":
+        return NAMES[bar["kind"]]
+    customs = [b for b in data["bars"] if b["kind"] == "custom"]
+    if bar.get("title"):
+        return f"Your own bar: {bar['title']}"
+    if len(customs) == 1:
+        return NAMES["custom"]
+    return f"{NAMES['custom']} {customs.index(bar) + 1}"
+
+
 def rows_for(bars_module) -> list:
     data = bars_module.settings()
     notes = {}
@@ -333,97 +355,143 @@ def rows_for(bars_module) -> list:
     except Exception:                                       # noqa: BLE001
         pass
 
-    rows = []
+    rows = [{"kind": "header", "text": "How they look",
+             "sub": "For every bar at once"},
+            {"kind": "choice", "bar": DISPLAY, "key": "size", "label": "Size",
+             "options": [list(o) for o in SIZES], "value": data["size"]},
+            {"kind": "choice", "bar": DISPLAY, "key": "layout", "label": "Layout",
+             "options": [list(o) for o in LAYOUTS], "value": data["layout"]}]
+    if data["layout"] == "rotate":
+        options = [list(o) for o in TURNS]
+        every = str(data["rotate_every"])
+        if every not in dict(TURNS):
+            options.insert(0, [every, f"Every {every} seconds"])
+        rows.append({"kind": "choice", "bar": DISPLAY, "key": "rotate_every",
+                     "label": "Next bar", "options": options, "value": every})
+
+    customs = sum(1 for b in data["bars"] if b["kind"] == "custom")
     for position, bar in enumerate(data["bars"]):
-        kind = bar["id"]
-        status = notes.get(kind, "")
-        rows.append({"kind": "header", "text": NAMES[kind],
+        kind = bar["kind"]
+        bar_id = bar["id"]
+        status = notes.get(bar_id, "")
+        rows.append({"kind": "header", "text": bar_name(data, bar),
                      "sub": "Showing now" if status == "showing"
                      else ("Off" if status == "off" else status.capitalize())})
-        rows.append({"kind": "choice", "bar": kind, "key": "enabled",
+        rows.append({"kind": "choice", "bar": bar_id, "key": "enabled",
                      "label": "Show this bar",
                      "options": [["no", "No"], ["yes", "Yes"]],
                      "value": "yes" if bar["enabled"] else "no"})
-        rows.append({"kind": "choice", "bar": kind, "key": "when",
+        rows.append({"kind": "choice", "bar": bar_id, "key": "when",
                      "label": "When", "options": [list(o) for o in WHEN[kind]],
                      "value": bar["when"]})
         if bar["when"] == "window":
             options = [list(o) for o in WINDOWS]
             if bar.get("window") and bar["window"] not in dict(WINDOWS):
                 options.insert(0, [bar["window"], bar["window"]])
-            rows.append({"kind": "choice", "bar": kind, "key": "window",
+            rows.append({"kind": "choice", "bar": bar_id, "key": "window",
                          "label": "Hours", "options": options,
                          "value": bar.get("window") or WINDOWS[1][0]})
-        rows.append({"kind": "choice", "bar": kind, "key": "days",
+        rows.append({"kind": "choice", "bar": bar_id, "key": "days",
                      "label": "Days", "options": [list(o) for o in DAYS],
                      "value": ",".join(bar.get("days") or [])})
         if kind == "stocks":
             chosen = bar.get("symbols") or []
-            rows.append({"kind": "action", "bar": kind, "action": "stocks",
+            rows.append({"kind": "action", "bar": bar_id, "action": "stocks",
                          "label": "Choose stocks: " + (
                              ", ".join(chosen[:5]) + (
                                  f" and {len(chosen) - 5} more"
                                  if len(chosen) > 5 else "")
                              if chosen else "none yet")})
         if kind == "sports":
-            rows.append({"kind": "choice", "bar": kind, "key": "followed_only",
+            rows.append({"kind": "choice", "bar": bar_id, "key": "followed_only",
                          "label": "Games",
                          "options": [["no", "Every game in my leagues"],
                                      ["yes", "Only teams I follow"]],
                          "value": "yes" if bar.get("followed_only") else "no"})
         if kind == "custom":
-            rows.append({"kind": "text", "bar": kind, "key": "title",
+            rows.append({"kind": "text", "bar": bar_id, "key": "title",
                          "label": "Title", "value": bar.get("title", "")})
-            rows.append({"kind": "text", "bar": kind, "key": "message",
+            rows.append({"kind": "text", "bar": bar_id, "key": "message",
                          "label": "Message", "value": bar.get("message", "")})
-            rows.append({"kind": "text", "bar": kind, "key": "logo",
+            rows.append({"kind": "text", "bar": bar_id, "key": "logo",
                          "label": "Logo, a web address or a file",
                          "value": bar.get("logo", "")})
-            rows.append({"kind": "text", "bar": kind, "key": "feed",
-                         "label": "News feed address (RSS, Atom or JSON Feed)",
+            rows.append({"kind": "text", "bar": bar_id, "key": "feed",
+                         "label": "Feed: a web address or a file "
+                                  "(RSS, Atom, JSON Feed, FreeTVOS JSON or text)",
                          "value": bar.get("feed", "")})
-        rows.append({"kind": "choice", "bar": kind, "key": "speed",
+            rows.append({"kind": "text", "bar": bar_id, "key": "accent",
+                         "label": "Colour, like #3DDC97",
+                         "value": bar.get("accent", "")})
+        rows.append({"kind": "choice", "bar": bar_id, "key": "speed",
                      "label": "Speed", "options": [list(o) for o in SPEEDS],
                      "value": str(bar.get("speed", 140))})
         if position > 0:
-            rows.append({"kind": "action", "bar": kind, "action": "up",
+            rows.append({"kind": "action", "bar": bar_id, "action": "up",
                          "label": "Move this bar up"})
         if position < len(data["bars"]) - 1:
-            rows.append({"kind": "action", "bar": kind, "action": "down",
+            rows.append({"kind": "action", "bar": bar_id, "action": "down",
                          "label": "Move this bar down"})
+        if kind == "custom" and customs > 1:
+            rows.append({"kind": "action", "bar": bar_id, "action": "remove",
+                         "label": "Remove this bar"})
+    rows.append({"kind": "header", "text": "More bars"})
+    rows.append({"kind": "action", "bar": DISPLAY, "action": "add_custom",
+                 "label": "Add another bar of your own"})
     return rows
 
 
 def apply(bars_module, change: dict) -> str:
-    kind = change.get("bar")
-    if kind not in bars_module.KINDS:
+    bar_id = change.get("bar")
+    key, value = change.get("key"), change.get("value", "")
+    if bar_id == DISPLAY:
+        if change.get("action") == "add_custom":
+            bars_module.add_custom()
+            return "Added. Switch it on and give it a feed below."
+        if key in ("size", "layout"):
+            bars_module.update_display(**{key: value})
+            return "Saved"
+        if key == "rotate_every":
+            if not str(value).isdigit():
+                raise ValueError("That is not a number of seconds.")
+            bars_module.update_display(rotate_every=int(value))
+            return "Saved"
+        raise ValueError("That setting does not exist.")
+
+    bar = bars_module.find(bars_module.settings(), bar_id)
+    if bar is None:
         raise ValueError("That bar does not exist.")
     if change.get("action") in ("up", "down"):
-        bars_module.move_bar(kind, -1 if change["action"] == "up" else 1)
+        bars_module.move_bar(bar_id, -1 if change["action"] == "up" else 1)
         return "Moved " + ("up" if change["action"] == "up" else "down")
+    if change.get("action") == "remove":
+        bars_module.remove_bar(bar_id)
+        return "Removed"
 
-    key, value = change.get("key"), change.get("value", "")
     if key in ("enabled", "followed_only"):
-        bars_module.update_bar(kind, **{key: value == "yes"})
+        bars_module.update_bar(bar_id, **{key: value == "yes"})
     elif key == "days":
-        bars_module.update_bar(kind, days=[d for d in value.split(",") if d])
+        bars_module.update_bar(bar_id, days=[d for d in value.split(",") if d])
     elif key == "speed":
-        bars_module.update_bar(kind, speed=int(value) if value.isdigit() else 140)
+        bars_module.update_bar(bar_id, speed=int(value) if value.isdigit() else 140)
     elif key == "symbols":
         symbols = [s.strip().upper() for s in value.replace(",", " ").split()
                    if s.strip()]
-        current = next(b for b in bars_module.settings()["bars"]
-                       if b["id"] == "stocks")
+        current = bars_module.find(bars_module.settings(), "stocks")
         bars_module.set_stocks(symbols, current.get("assets") or {})
     elif key == "when":
         changes = {"when": value}
-        current = next(b for b in bars_module.settings()["bars"]
-                       if b["id"] == kind)
+        current = bars_module.find(bars_module.settings(), bar_id)
         if value == "window" and not current.get("window"):
             changes["window"] = WINDOWS[1][0]
-        bars_module.update_bar(kind, **changes)
+        bars_module.update_bar(bar_id, **changes)
+    elif key == "accent":
+        value = value.strip()
+        if value and not bars_module.ACCENT.match(value):
+            raise ValueError("A colour is # and six hex digits, like #3DDC97.")
+        bars_module.update_bar(bar_id, accent=value)
     elif key in ("window", "title", "message", "logo", "feed"):
-        bars_module.update_bar(kind, **{key: value})
+        bars_module.update_bar(bar_id, **{key: value})
     else:
         raise ValueError("That setting does not exist.")
     return "Saved"
@@ -445,9 +513,20 @@ def run(bars_module) -> int:
         rows = rows_for(bars_module)
         result = {"rows": rows, "message": message}
         # After a move the bar's rows are somewhere else; follow them there so
-        # pressing Move up twice moves it twice.
-        if payload.get("action"):
-            focusable = [r for r in rows if r["kind"] != "header"]
+        # pressing Move up twice moves it twice. A new bar is followed to its
+        # own first row, and a removed one leaves the highlight at the top.
+        focusable = [r for r in rows if r["kind"] != "header"]
+        action = payload.get("action")
+        if action == "add_custom":
+            data = bars_module.settings()
+            newest = [b for b in data["bars"] if b["kind"] == "custom"][-1]["id"]
+            target = next((i for i, r in enumerate(focusable)
+                           if r.get("bar") == newest), None)
+            if target is not None:
+                result["focus"] = target
+        elif action == "remove":
+            result["focus"] = 0
+        elif action:
             for i, r in enumerate(focusable):
                 if r.get("bar") == payload["bar"] and r.get("action"):
                     result["focus"] = i

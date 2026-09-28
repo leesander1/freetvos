@@ -12,6 +12,7 @@ lets it be tested against recorded replies on any machine.
 import datetime as dt
 import html
 import json
+import os
 import re
 import urllib.error
 import urllib.parse
@@ -260,6 +261,91 @@ def parse_feed(raw: bytes, limit: int = 12) -> list:
 
 def feed(url: str, limit: int = 12) -> list:
     return parse_feed(_get(url, {"User-Agent": BROWSER}), limit)
+
+
+# ---------------------------------------------------------------------------
+# A custom bar's own data.
+# ---------------------------------------------------------------------------
+
+DIRECTIONS = ("up", "down", "flat", "live")
+
+
+def _item(raw: dict) -> dict | None:
+    """One FreeTVOS ticker item, trimmed to what the bar can draw.
+
+    Text is cut rather than refused, and an unknown direction is taken as flat,
+    because a data file written by hand should still show something.
+    """
+    label = _text(str(raw.get("label") or ""))[:120]
+    if not label:
+        return None
+    item = {"label": label,
+            "direction": raw.get("direction") if raw.get("direction") in DIRECTIONS
+            else "flat"}
+    for key in ("value", "change"):
+        if raw.get(key) not in (None, ""):
+            item[key] = _text(str(raw[key]))[:40]
+    if raw.get("star"):
+        item["star"] = True
+    return item
+
+
+def parse_ticker(raw: bytes, limit: int = 40) -> list:
+    """What a custom bar crawls, from any of the formats it accepts.
+
+    - RSS, Atom or JSON Feed: each headline is an item.
+    - FreeTVOS ticker JSON: {"items": [{"label": ..., "value": ..., "change":
+      ..., "direction": "up"}]}, for numbers of your own, drawn like prices.
+    - Plain text: each non-empty line is an item. The simplest thing to keep
+      in a file on the television.
+
+    A page of HTML is refused rather than shown as markup crawling past.
+    """
+    raw = (raw or b"").strip()
+    if raw.startswith(b"{") or raw.startswith(b"["):
+        try:
+            data = json.loads(raw)
+        except ValueError as exc:
+            raise SourceError("that is not readable JSON") from exc
+        rows = data if isinstance(data, list) else (data.get("items") or [])
+        rows = [r for r in rows if isinstance(r, dict)]
+        # FreeTVOS items name a label; JSON Feed items have a title instead.
+        if rows and any("label" in r for r in rows):
+            return [i for i in (_item(r) for r in rows) if i][:limit]
+        return [{"label": h, "direction": "flat"}
+                for h in parse_feed(raw, limit)]
+    if raw.startswith(b"<"):
+        return [{"label": h, "direction": "flat"}
+                for h in parse_feed(raw, limit)]
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise SourceError("that is not text, a feed or JSON") from exc
+    lines = [_text(line)[:120] for line in text.splitlines()]
+    return [{"label": line, "direction": "flat"} for line in lines if line][:limit]
+
+
+def read_address(address: str) -> bytes:
+    """A web address, or a file on the television given as a path or file://.
+
+    A file is how a bar is fed without a server: whatever writes it, a script,
+    a shared folder, another program, the bar picks the change up on its next
+    refresh.
+    """
+    address = (address or "").strip()
+    if address.startswith(("http://", "https://")):
+        return _get(address, {"User-Agent": BROWSER})
+    path = urllib.parse.urlparse(address).path if address.startswith("file:") \
+        else address
+    try:
+        with open(os.path.expanduser(path), "rb") as handle:
+            return handle.read(1024 * 1024)
+    except OSError as exc:
+        raise SourceError(f"could not read {path}: {exc.strerror or exc}") from exc
+
+
+def ticker(address: str, limit: int = 40) -> list:
+    return parse_ticker(read_address(address), limit)
 
 
 # ---------------------------------------------------------------------------

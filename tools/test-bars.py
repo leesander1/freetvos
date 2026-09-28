@@ -157,6 +157,50 @@ def main() -> int:
     except sources.SourceError:
         check("a web page is refused", "refused", "refused")
 
+    print("what a custom bar can read")
+    ticker = sources.parse_ticker
+    own = json.dumps({"items": [
+        {"label": "Sales today", "value": "$12,400", "change": "4%", "direction": "up"},
+        {"label": "Returns", "value": "18", "direction": "sideways"},
+        {"label": "", "value": "no label, dropped"},
+        {"label": "Top store", "star": True}]}).encode()
+    items = ticker(own)
+    check("FreeTVOS JSON, drawn like prices",
+          items[0], {"label": "Sales today", "direction": "up",
+                     "value": "$12,400", "change": "4%"})
+    check("an unknown direction is flat", items[1]["direction"], "flat")
+    check("an item with no label is left out", len(items), 3)
+    check("a star is kept", items[2].get("star"), True)
+    check("a bare list works too",
+          [i["label"] for i in ticker(b'[{"label": "A"}, {"label": "B"}]')], ["A", "B"])
+    check("a JSON Feed is headlines",
+          [i["label"] for i in ticker(jsonfeed.encode())], ["One", "Two"])
+    check("so is RSS", [i["label"] for i in ticker(rss)], ["First & foremost", "Second"])
+    check("plain text is a line an item, blank lines skipped",
+          [i["label"] for i in ticker(b"Welcome to ACME\n\n  Canteen opens at noon  \n")],
+          ["Welcome to ACME", "Canteen opens at noon"])
+    check("entities in text are read",
+          [i["label"] for i in ticker(b"Plain &amp; simple")], ["Plain & simple"])
+    try:
+        ticker(b"<html><body>not a feed")
+        check("a web page is still refused", "accepted", "refused")
+    except sources.SourceError:
+        check("a web page is still refused", "refused", "refused")
+    long_label = ticker(json.dumps({"items": [{"label": "x" * 500}]}).encode())
+    check("a long label is cut, not refused", len(long_label[0]["label"]), 120)
+    with tempfile.TemporaryDirectory() as tmp:
+        note = Path(tmp) / "board.txt"
+        note.write_text("Fire drill at 3\n")
+        check("a file on the television, by path",
+              [i["label"] for i in sources.ticker(str(note))], ["Fire drill at 3"])
+        check("or as file://",
+              [i["label"] for i in sources.ticker(note.as_uri())], ["Fire drill at 3"])
+        try:
+            sources.ticker(str(Path(tmp) / "missing.txt"))
+            check("a missing file says so", "read", "error")
+        except sources.SourceError as exc:
+            check("a missing file says so", "could not read" in str(exc), True)
+
     print("time windows")
     win = sources.in_window
     check("inside", win("07:00-09:30", at("2026-09-15T08:15")), True)
@@ -274,6 +318,102 @@ def main() -> int:
         kept = feeder.get("stocks", {}, "a")
         check("a failed refresh keeps the last good prices", kept, quotes)
         check("and remembers why", feeder.errors.get("stocks"), "gone")
+
+        print("more than one bar of your own")
+        # A file written before bars had kinds: ids only.
+        Path(os.environ["FREETVOS_BARS_CONF"]).write_text(json.dumps({"bars": [
+            {"id": "custom", "enabled": True, "title": "OLD"},
+            {"id": "stocks"}, {"id": "nonsense"}]}))
+        data = bars.settings()
+        check("an older settings file still reads",
+              [(b["id"], b["kind"]) for b in data["bars"]],
+              [("custom", "custom"), ("stocks", "stocks"), ("sports", "sports")])
+        check("with its values kept", data["bars"][0]["title"], "OLD")
+        check("and the display at its defaults",
+              (data["size"], data["layout"], data["rotate_every"]),
+              ("full", "stacked", 20))
+
+        second = bars.add_custom()
+        third = bars.add_custom()
+        check("new bars get their own ids", (second, third), ("custom-2", "custom-3"))
+        bars.update_bar("custom", enabled=True, when="always", message="",
+                        feed="https://one.example/feed")
+        bars.update_bar(second, enabled=True, when="always", title="TWO",
+                        feed="https://two.example/feed", accent="#FF0000")
+        bars.update_bar(third, accent="red")
+        asked = []
+        feeder = bars.Feeder({"custom": lambda bar: (asked.append(bar["id"]) or
+                                                     [f"from {bar['id']}"]),
+                              "market": lambda bar: "closed",
+                              "stocks": lambda bar: [], "sports": lambda bar: []})
+        result = bars.build(bars.settings(), feeder, now)
+        by_id = {b["id"]: b for b in result["bars"]}
+        check("each custom bar reads its own feed",
+              (by_id["custom"]["items"][0]["label"], by_id[second]["items"][0]["label"]),
+              ("from custom", "from custom-2"))
+        check("and is asked separately", sorted(asked), ["custom", "custom-2"])
+        check("a colour is passed on", by_id[second]["accent"], "#FF0000")
+        check("one that is not a colour is not",
+              "accent" in bars.build(bars.settings(), feeder, now)["bars"][0], False)
+        check("the service says how to draw them",
+              (result["size"], result["layout"], result["rotate_every"]),
+              ("full", "stacked", 20))
+
+        bars.remove_bar(third)
+        check("an extra custom bar can be removed",
+              [b["id"] for b in bars.settings()["bars"]].count(third), 0)
+        for refused, label in (("stocks", "the stocks bar is switched off, not removed"),
+                               ("nonsense", "a bar that does not exist")):
+            try:
+                bars.remove_bar(refused)
+                check(label, "removed", "refused")
+            except ValueError:
+                check(label, "refused", "refused")
+        bars.remove_bar(second)
+        try:
+            bars.remove_bar("custom")
+            check("the last custom bar stays", "removed", "refused")
+        except ValueError:
+            check("the last custom bar stays", "refused", "refused")
+
+        print("how the bars look")
+        bars.update_display(size="thin", layout="rotate", rotate_every=2)
+        data = bars.settings()
+        check("thin, taking turns", (data["size"], data["layout"]), ("thin", "rotate"))
+        check("a turn is never shorter than five seconds", data["rotate_every"], 5)
+        for bad in ({"size": "huge"}, {"layout": "diagonal"}):
+            try:
+                bars.update_display(**bad)
+                check(f"refused: {bad}", "accepted", "refused")
+            except ValueError:
+                check(f"refused: {bad}", "refused", "refused")
+
+        print("the settings page")
+        sys.path.insert(0, str(REPO / "image/overlay/usr/share/freetvos"))
+        import barsui
+        rows = barsui.rows_for(bars)
+        check("it opens with how the bars look",
+              [r.get("key") for r in rows[1:4]], ["size", "layout", "rotate_every"])
+        check("and ends with a way to add a bar",
+              rows[-1].get("action"), "add_custom")
+        barsui.apply(bars, {"bar": barsui.DISPLAY, "action": "add_custom"})
+        added = [b for b in bars.settings()["bars"] if b["kind"] == "custom"][-1]
+        check("adding from the page", added["id"], "custom-2")
+        check("an extra bar can be removed from the page",
+              any(r.get("action") == "remove" and r["bar"] == added["id"]
+                  for r in barsui.rows_for(bars)), True)
+        try:
+            barsui.apply(bars, {"bar": added["id"], "key": "accent", "value": "blue"})
+            check("a colour that is not one is refused", "saved", "refused")
+        except ValueError:
+            check("a colour that is not one is refused", "refused", "refused")
+        barsui.apply(bars, {"bar": added["id"], "key": "accent", "value": "#123abc"})
+        check("and one that is, kept",
+              bars.find(bars.settings(), added["id"])["accent"], "#123abc")
+        barsui.apply(bars, {"bar": barsui.DISPLAY, "key": "layout", "value": "stacked"})
+        check("the layout from the page", bars.settings()["layout"], "stacked")
+        check("with nothing to rotate, no turn length is asked",
+              any(r.get("key") == "rotate_every" for r in barsui.rows_for(bars)), False)
 
     print()
     if failures:

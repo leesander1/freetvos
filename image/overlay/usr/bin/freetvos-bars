@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """Bars at the bottom of the screen: stock prices, live scores, and your own.
 
-Three bars that stack above whatever is playing, each with its own schedule:
-always, only while the market is open, only while games are live, or a time of
-day. The third bar is yours to fill with a title, a logo, a message and a news
-feed.
+Bars above whatever is playing, each with its own schedule: always, only
+while the market is open, only while games are live, or a time of day. Custom
+bars, as many as you like, carry a title, a logo, a message and a feed of your
+own. They stack, or share one bar and take turns, at full size or thin.
 
-  freetvos-bars serve        the service behind them, run by the session
-  freetvos-bars settings     the page for choosing what shows and when
-  freetvos-bars status       which bars are showing now, and why not if not
-  freetvos-bars on BAR       turn one on: stocks, sports or custom
+  freetvos-bars serve              the service behind them, run by the session
+  freetvos-bars settings           the page for choosing what shows and when
+  freetvos-bars status             which bars are showing now, and why not if not
+  freetvos-bars on BAR             turn one on, by its id: stocks, sports, custom
   freetvos-bars off BAR
+  freetvos-bars add                another custom bar; prints its id
+  freetvos-bars size full|thin
+  freetvos-bars layout stacked|rotate [SECONDS]
 
 The service decides and fetches; a small QML overlay draws. The overlay sits in
 the compositor's overlay layer, above fullscreen video, and takes no keyboard
@@ -23,6 +26,7 @@ import importlib.machinery
 import importlib.util
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -45,18 +49,31 @@ SPORTS_CMD = os.environ.get("FREETVOS_SPORTS_CMD", "/usr/bin/freetvos-sports")
 
 KINDS = ("stocks", "sports", "custom")
 
+# One stocks bar and one scores bar; custom bars as many as wanted. A bar's id
+# names it and its kind says what it is. The first bar of each kind keeps the
+# kind as its id, which is what every file written before custom bars could be
+# repeated already says.
 DEFAULTS = {
-    "stocks": {"id": "stocks", "enabled": False, "when": "market",
+    "stocks": {"id": "stocks", "kind": "stocks", "enabled": False, "when": "market",
                "window": "", "days": [], "speed": 140,
                "symbols": ["SPY", "QQQ", "AAPL", "MSFT", "NVDA", "AMZN"],
                "assets": {"SPY": "etf", "QQQ": "etf"}},
-    "sports": {"id": "sports", "enabled": False, "when": "live",
+    "sports": {"id": "sports", "kind": "sports", "enabled": False, "when": "live",
                "window": "", "days": [], "speed": 140,
                "followed_only": False},
-    "custom": {"id": "custom", "enabled": False, "when": "always",
+    "custom": {"id": "custom", "kind": "custom", "enabled": False, "when": "always",
                "window": "", "days": [], "speed": 120,
-               "title": "", "message": "", "logo": "", "feed": ""},
+               "title": "", "message": "", "logo": "", "feed": "", "accent": ""},
 }
+
+# How the bars are drawn as a whole. Full is about six percent of the screen's
+# height a bar; thin is a little over half that. Stacked shows every bar that is
+# on, one above another; rotate shows one bar at a time and moves to the next
+# every rotate_every seconds.
+DISPLAY = {"size": "full", "layout": "stacked", "rotate_every": 20}
+SIZES = ("full", "thin")
+LAYOUTS = ("stacked", "rotate")
+ACCENT = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 # How often each source is asked, while its bar could be showing. Prices move
 # every second and nobody reads a crawl that fast; scores change by the play;
@@ -70,21 +87,39 @@ EVERY = {"stocks": 60, "sports": 30, "custom": 600, "market": 300}
 
 
 def settings() -> dict:
-    """The bars in stacking order, top first, each filled out with defaults."""
+    """The bars in stacking order, top first, each filled out with defaults,
+    and how they are drawn."""
     try:
         stored = json.loads(SETTINGS.read_text())
     except (OSError, ValueError):
         stored = {}
-    seen, bars = set(), []
+    ids, kinds, bars = set(), set(), []
     for bar in stored.get("bars") or []:
-        kind = bar.get("id")
-        if kind in DEFAULTS and kind not in seen:
-            seen.add(kind)
-            bars.append({**DEFAULTS[kind], **bar})
+        if not isinstance(bar, dict):
+            continue
+        bar_id = str(bar.get("id") or "")
+        # Files from before bars had kinds name only an id, which was the kind.
+        kind = bar.get("kind") or bar_id
+        if kind not in DEFAULTS or not bar_id or bar_id in ids:
+            continue
+        if kind != "custom" and kind in kinds:
+            continue
+        ids.add(bar_id)
+        kinds.add(kind)
+        bars.append({**DEFAULTS[kind], **bar, "id": bar_id, "kind": kind})
     for kind in KINDS:
-        if kind not in seen:
+        if kind not in kinds:
             bars.append(dict(DEFAULTS[kind]))
-    return {"bars": bars}
+    display = {key: stored.get(key, default) for key, default in DISPLAY.items()}
+    if display["size"] not in SIZES:
+        display["size"] = DISPLAY["size"]
+    if display["layout"] not in LAYOUTS:
+        display["layout"] = DISPLAY["layout"]
+    try:
+        display["rotate_every"] = min(600, max(5, int(display["rotate_every"])))
+    except (TypeError, ValueError):
+        display["rotate_every"] = DISPLAY["rotate_every"]
+    return {"bars": bars, **display}
 
 
 def save(data: dict) -> None:
@@ -96,11 +131,61 @@ def save(data: dict) -> None:
     temporary.replace(SETTINGS)
 
 
-def update_bar(kind: str, **changes) -> dict:
+def find(data: dict, bar_id: str):
+    return next((b for b in data["bars"] if b["id"] == bar_id), None)
+
+
+def update_bar(bar_id: str, **changes) -> dict:
     data = settings()
-    for bar in data["bars"]:
-        if bar["id"] == kind:
-            bar.update(changes)
+    bar = find(data, bar_id)
+    if bar is not None:
+        bar.update({k: v for k, v in changes.items() if k not in ("id", "kind")})
+    save(data)
+    return data
+
+
+def update_display(**changes) -> dict:
+    """Size, layout and how long each bar has when they take turns."""
+    data = settings()
+    if "size" in changes:
+        if changes["size"] not in SIZES:
+            raise ValueError(f"size is one of {', '.join(SIZES)}")
+        data["size"] = changes["size"]
+    if "layout" in changes:
+        if changes["layout"] not in LAYOUTS:
+            raise ValueError(f"layout is one of {', '.join(LAYOUTS)}")
+        data["layout"] = changes["layout"]
+    if "rotate_every" in changes:
+        data["rotate_every"] = min(600, max(5, int(changes["rotate_every"])))
+    save(data)
+    return data
+
+
+def add_custom() -> str:
+    """Another custom bar, off, at the bottom of the stack. Returns its id."""
+    data = settings()
+    taken = {b["id"] for b in data["bars"]}
+    n = 2
+    while f"custom-{n}" in taken:
+        n += 1
+    bar_id = f"custom-{n}"
+    data["bars"].append({**DEFAULTS["custom"], "id": bar_id})
+    save(data)
+    return bar_id
+
+
+def remove_bar(bar_id: str) -> dict:
+    """Take a custom bar away. The stocks and scores bars are switched off
+    rather than removed, and the last custom bar stays for the same reason."""
+    data = settings()
+    bar = find(data, bar_id)
+    if bar is None:
+        raise ValueError("That bar does not exist.")
+    if bar["kind"] != "custom":
+        raise ValueError("Only a custom bar can be removed; switch this one off.")
+    if sum(1 for b in data["bars"] if b["kind"] == "custom") < 2:
+        raise ValueError("The last custom bar stays; switch it off instead.")
+    data["bars"] = [b for b in data["bars"] if b["id"] != bar_id]
     save(data)
     return data
 
@@ -120,11 +205,11 @@ def set_stocks(symbols: list, assets: dict) -> dict:
     return update_bar("stocks", symbols=clean, assets=kinds)
 
 
-def move_bar(kind: str, delta: int) -> dict:
+def move_bar(bar_id: str, delta: int) -> dict:
     data = settings()
     order = [b["id"] for b in data["bars"]]
-    if kind in order:
-        i = order.index(kind)
+    if bar_id in order:
+        i = order.index(bar_id)
         j = min(max(i + delta, 0), len(order) - 1)
         data["bars"].insert(j, data["bars"].pop(i))
         save(data)
@@ -152,7 +237,7 @@ class Feeder:
             "stocks": lambda bar: sources.quotes(bar.get("symbols") or [],
                                                  bar.get("assets") or {}),
             "sports": lambda bar: _sports().today()["games"],
-            "custom": lambda bar: (sources.feed(bar["feed"])
+            "custom": lambda bar: (sources.ticker(bar["feed"])
                                    if bar.get("feed") else []),
             "market": lambda bar: sources.market_status(
                 dt.datetime.now(dt.timezone.utc)),
@@ -160,37 +245,41 @@ class Feeder:
         self.cache: dict = {}
         self.errors: dict = {}
 
-    def get(self, name: str, bar: dict, key: str = ""):
+    def get(self, name: str, bar: dict, key: str = "", slot: str = ""):
         """The cached answer, refreshed when it is older than its cadence.
 
         The key changes when the question does, so choosing different stock
-        symbols is answered at once rather than a minute later.
+        symbols is answered at once rather than a minute later. The slot keeps
+        answers apart that share a source, so two custom bars each keep their
+        own headlines.
         """
-        entry = self.cache.get(name)
+        slot = slot or name
+        entry = self.cache.get(slot)
         stale = (entry is None or entry[1] != key
                  or time.time() - entry[0] > EVERY[name])
         if stale:
             try:
                 value = self.fetch[name](bar)
-                self.cache[name] = (time.time(), key, value)
-                self.errors.pop(name, None)
+                self.cache[slot] = (time.time(), key, value)
+                self.errors.pop(slot, None)
             except Exception as exc:                        # noqa: BLE001
                 # Keep showing the last good answer. A bar that vanishes
                 # because one request failed looks broken; one that is a minute
                 # behind looks like a ticker.
-                self.errors[name] = str(exc)[:160]
+                self.errors[slot] = str(exc)[:160]
                 if entry is None:
                     return None
-        return self.cache[name][2]
+        return self.cache[slot][2]
 
 
 def build(data: dict, feeder: Feeder, now: dt.datetime) -> dict:
     """What the overlay should draw now, and a reason for every bar left off."""
     shown, notes = [], {}
     for bar in data["bars"]:
-        kind = bar["id"]
+        bar_id = bar["id"]
+        kind = bar.get("kind", bar_id)
         if not bar.get("enabled"):
-            notes[kind] = "off"
+            notes[bar_id] = "off"
             continue
 
         facts = {}
@@ -203,13 +292,15 @@ def build(data: dict, feeder: Feeder, now: dt.datetime) -> dict:
                                              bar.get("followed_only", False))
 
         if not sources.should_show(bar, now, facts):
-            notes[kind] = {"market": "market closed",
+            notes[bar_id] = {"market": "market closed",
                            "live": "no games live",
                            "window": "outside its hours"}.get(
                                bar.get("when"), "not scheduled now")
             continue
 
-        entry = {"id": kind, "speed": bar.get("speed", 140), "items": []}
+        entry = {"id": bar_id, "kind": kind, "speed": bar.get("speed", 140),
+                 "items": []}
+        slot = kind
         if kind == "stocks":
             key = ",".join(bar.get("symbols") or [])
             entry["title"] = "MARKETS"
@@ -224,24 +315,29 @@ def build(data: dict, feeder: Feeder, now: dt.datetime) -> dict:
             if logo and not logo.startswith(("http://", "https://", "file:")):
                 logo = Path(logo).expanduser().resolve().as_uri()
             entry["logo"] = logo
+            if ACCENT.match(bar.get("accent") or ""):
+                entry["accent"] = bar["accent"]
             items = []
             if bar.get("message"):
                 items.append({"label": bar["message"], "direction": "flat"})
             # Only asked when there is a feed. With none, the last feed's
             # headlines are still cached for up to ten minutes, and clearing
             # the address would leave them crawling past as if it had not.
+            slot = f"custom:{bar_id}"
             if bar.get("feed"):
-                for headline in feeder.get("custom", bar, bar["feed"]) or []:
-                    items.append({"label": headline, "direction": "flat"})
+                for item in feeder.get("custom", bar, bar["feed"], slot) or []:
+                    items.append(item if isinstance(item, dict)
+                                 else {"label": item, "direction": "flat"})
             entry["items"] = items
 
         if not entry["items"]:
-            notes[kind] = feeder.errors.get(
-                kind, "nothing to show yet")
+            notes[bar_id] = feeder.errors.get(slot, "nothing to show yet")
             continue
-        notes[kind] = "showing"
+        notes[bar_id] = "showing"
         shown.append(entry)
-    return {"bars": shown, "notes": notes}
+    return {"bars": shown, "notes": notes, "size": data.get("size", "full"),
+            "layout": data.get("layout", "stacked"),
+            "rotate_every": data.get("rotate_every", 20)}
 
 
 # ---------------------------------------------------------------------------
@@ -337,19 +433,50 @@ def cmd_serve(_args) -> int:
 
 
 def cmd_status(_args) -> int:
-    result = build(settings(), Feeder(), dt.datetime.now().astimezone())
-    for bar in settings()["bars"]:
+    data = settings()
+    result = build(data, Feeder(), dt.datetime.now().astimezone())
+    print(f"size {data['size']}, layout {data['layout']}"
+          + (f", {data['rotate_every']}s each" if data["layout"] == "rotate" else ""))
+    for bar in data["bars"]:
         note = result["notes"].get(bar["id"], "")
-        print(f"{bar['id']:7} {bar['when']:7} {note}")
+        print(f"{bar['id']:10} {bar['kind']:7} {bar['when']:7} {note}")
     return 0
 
 
 def cmd_toggle(args) -> int:
-    if args.bar not in KINDS:
+    if find(settings(), args.bar) is None:
         print(f"no such bar: {args.bar}", file=sys.stderr)
         return 2
     update_bar(args.bar, enabled=args.cmd == "on")
     print(f"{args.bar} {args.cmd}")
+    return 0
+
+
+def cmd_add(_args) -> int:
+    print(add_custom())
+    return 0
+
+
+def cmd_size(args) -> int:
+    try:
+        update_display(size=args.size)
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        return 2
+    print(f"size {args.size}")
+    return 0
+
+
+def cmd_layout(args) -> int:
+    changes = {"layout": args.layout}
+    if args.seconds is not None:
+        changes["rotate_every"] = args.seconds
+    try:
+        update_display(**changes)
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        return 2
+    print(f"layout {args.layout}")
     return 0
 
 
@@ -370,6 +497,14 @@ def main() -> int:
         p = sub.add_parser(name)
         p.add_argument("bar")
         p.set_defaults(func=cmd_toggle)
+    sub.add_parser("add").set_defaults(func=cmd_add)
+    p = sub.add_parser("size")
+    p.add_argument("size", choices=SIZES)
+    p.set_defaults(func=cmd_size)
+    p = sub.add_parser("layout")
+    p.add_argument("layout", choices=LAYOUTS)
+    p.add_argument("seconds", nargs="?", type=int)
+    p.set_defaults(func=cmd_layout)
     args = parser.parse_args()
     if not args.cmd:
         parser.print_help()

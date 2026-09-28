@@ -17,8 +17,19 @@ Window {
 
     property string feedUrl: Qt.application.arguments.length > 0
         ? Qt.application.arguments[Qt.application.arguments.length - 1] : ""
+    // Every bar the service says is showing. What is drawn is `shown`: all of
+    // them stacked, or one at a time when the layout is "rotate".
     property var bars: []
-    property int barHeight: Math.round(Screen.height * 0.06)
+    property string size: "full"
+    property string layout: "stacked"
+    property int rotateEvery: 20
+    property int turn: 0
+    property var shown: layout === "rotate"
+        ? (bars.length ? [bars[turn % bars.length]] : [])
+        : bars
+    // Thin is a little over half the height of full; every font below is a
+    // fraction of this, so the whole bar scales with it.
+    property int barHeight: Math.round(Screen.height * (size === "thin" ? 0.036 : 0.06))
     property string lastPayload: ""
     // One width for every label on the left, the widest of them. Sized each to
     // its own word, SCORES came out narrower than MARKETS above it, and a stack
@@ -47,10 +58,13 @@ Window {
     // The room a logo gets, so a wide one cannot push one label past the rest.
     property real logoSlot: barHeight * 0.66 * 1.6
 
+    // Measured across every bar, not only the one showing, so the label keeps
+    // its width as the bars take turns rather than jumping with each one.
     onBarsChanged: measureBadges()
+    onBarHeightChanged: measureBadges()
 
     width: Screen.width
-    height: Math.max(1, bars.length * barHeight)
+    height: Math.max(1, shown.length * barHeight)
     color: "transparent"
     visible: bars.length > 0
     title: "FreeTVOS Bars"
@@ -75,7 +89,11 @@ Window {
                 return;
             root.lastPayload = request.responseText;
             try {
-                root.bars = JSON.parse(request.responseText).bars || [];
+                var payload = JSON.parse(request.responseText);
+                root.size = payload.size || "full";
+                root.layout = payload.layout || "stacked";
+                root.rotateEvery = Math.max(5, payload.rotate_every || 20);
+                root.bars = payload.bars || [];
             } catch (e) {
                 root.bars = [];
             }
@@ -92,11 +110,20 @@ Window {
         onTriggered: root.refresh()
     }
 
+    // Taking turns: the next bar every rotateEvery seconds. Nothing to rotate
+    // with one bar, so the timer only runs with two or more.
+    Timer {
+        interval: root.rotateEvery * 1000
+        running: root.layout === "rotate" && root.bars.length > 1
+        repeat: true
+        onTriggered: root.turn = (root.turn + 1) % Math.max(1, root.bars.length)
+    }
+
     Column {
         anchors.fill: parent
 
         Repeater {
-            model: root.bars
+            model: root.shown
 
             delegate: Rectangle {
                 id: strip
@@ -105,6 +132,13 @@ Window {
                 height: root.barHeight
                 color: modelData.background || "#E60B0E14"
                 clip: true
+
+                // Each bar fades in as it arrives, so taking turns reads as a
+                // change of channel rather than a flicker.
+                opacity: 0
+                NumberAnimation on opacity {
+                    from: 0; to: 1; duration: 350; easing.type: Easing.OutQuad
+                }
 
                 Rectangle {
                     anchors.top: parent.top
