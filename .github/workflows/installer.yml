@@ -63,6 +63,12 @@ jobs:
       # it boots from cannot be chosen, and a machine without that drive stops
       # instead of installing somewhere else. No account settings: the image
       # already creates the tv account and logs it in.
+      #
+      # --nohome matters. On a large drive automatic partitioning splits off a
+      # /home partition, and on a bootc system /home is a link to /var/home, so
+      # it cannot be mounted: the first install on real hardware stopped in
+      # emergency mode on "Mount path /home is not canonical". A 40 GB test
+      # disk never showed it, because it was too small to get a /home.
       - name: Installer settings
         run: |
           mkdir -p output
@@ -73,7 +79,7 @@ jobs:
           ignoredisk --only-use=nvme0n1
           zerombr
           clearpart --all --initlabel --disklabel=gpt --drives=nvme0n1
-          autopart --noswap --type=plain
+          autopart --noswap --nohome --type=plain
           rootpw --lock
           reboot --eject
           """

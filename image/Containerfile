@@ -113,6 +113,24 @@ RUN dnf install -y --setopt=install_weak_deps=False \
  && dnf clean all
 
 # ---------------------------------------------------------------------------
+# Firmware for real hardware.
+#
+# The bootc base carries almost none, which a VM never notices. The first
+# install on a real box, a mini PC with an Intel 7265 card, came up with no
+# wifi and no Bluetooth: "iwlwifi: no suitable firmware found". Joining wifi
+# and pairing a remote are the first two things a television does, so this
+# ships firmware for the common wireless, Bluetooth and GPU chips rather than
+# only for the box it was tested on.
+# ---------------------------------------------------------------------------
+RUN dnf install -y --setopt=install_weak_deps=False \
+      linux-firmware \
+      amd-gpu-firmware amd-ucode-firmware intel-gpu-firmware \
+      iwlwifi-mvm-firmware iwlwifi-dvm-firmware iwlbluetooth-firmware \
+      mt7xxx-firmware realtek-firmware atheros-firmware brcmfmac-firmware \
+      intel-audio-firmware \
+ && dnf clean all
+
+# ---------------------------------------------------------------------------
 # Casting receivers.
 #
 # UxPlay gives real AirPlay mirroring and audio. There is no legitimate open
