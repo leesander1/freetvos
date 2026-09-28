@@ -145,9 +145,19 @@ RUN dnf install -y --setopt=install_weak_deps=False \
 
 # ---------------------------------------------------------------------------
 # Web app runtime and system plumbing.
+#
+# Fedora's Chromium decodes video with the system ffmpeg, and Fedora's ffmpeg
+# has no H.264 or HEVC decoder of its own, only OpenH264, which plays nothing
+# past the simplest H.264 profile. YouTube TV's live channels are H.264, and
+# played "This format is not supported". libavcodec-freeworld is RPM Fusion's
+# full build of the same library; its directory is searched first, so Chromium
+# loads it without being told. It must match libavcodec-free's version, so dnf
+# may hold Fedora's ffmpeg a release back until RPM Fusion catches up; the
+# check below fails the build if the pair ever stops giving Chromium H.264.
 # ---------------------------------------------------------------------------
 RUN dnf install -y --setopt=install_weak_deps=False \
       chromium \
+      libavcodec-freeworld \
       NetworkManager-wifi \
       plymouth plymouth-system-theme \
       plymouth-plugin-script \
@@ -160,6 +170,17 @@ RUN dnf install -y --setopt=install_weak_deps=False \
       squashfs-tools \
       flatpak \
  && dnf clean all
+
+# Fail the build rather than ship a Chromium that cannot play live TV: the
+# libavcodec it links against, found the way it finds it, must decode H.264
+# and HEVC.
+RUN set -e; \
+    AVCODEC="$(ldd /usr/lib64/chromium-browser/chromium-browser | awk '/libavcodec/ {print $1}')"; \
+    test -n "$AVCODEC"; \
+    python3 -c 'import ctypes, sys; lib = ctypes.CDLL(sys.argv[1]); \
+lib.avcodec_find_decoder_by_name.restype = ctypes.c_void_p; \
+missing = [n for n in ("h264", "hevc") if not lib.avcodec_find_decoder_by_name(n.encode())]; \
+assert not missing, "Chromium would have no decoder for %s" % missing' "$AVCODEC"
 
 # ---------------------------------------------------------------------------
 # Overlay: units, launchers, branding, app definitions.
