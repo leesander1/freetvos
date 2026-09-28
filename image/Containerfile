@@ -81,11 +81,22 @@ RUN dnf remove -y plasma-welcome || true
 # Fedora's own mesa-va-drivers is built without H.264 and HEVC, so on an AMD
 # GPU most streaming video would decode on the processor. The freeworld build
 # is the same driver with those codecs left in.
+#
+# ffmpeg-libs is RPM Fusion's whole ffmpeg, first, so that everything after it
+# (gstreamer, mpv, TVHeadend, Chromium) is installed against it and Fedora's
+# cut-down ffmpeg-free never arrives. Fedora's has no H.264 or HEVC decoder of
+# its own, only OpenH264, which plays nothing past the simplest H.264 profile,
+# and Chromium decodes through it: YouTube TV's live channels, which are H.264,
+# said "This format is not supported". All of ffmpeg's libraries must come from
+# the same build. Adding only RPM Fusion's libavcodec-freeworld beside Fedora's
+# others paired an 8.0 libavcodec with an 8.1 libavformat, and Chromium would
+# not start at all: "undefined symbol: av_exif_parse_buffer".
 RUN dnf install -y \
       "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm" \
  && dnf clean all
 
 RUN dnf install -y --setopt=install_weak_deps=False \
+      ffmpeg-libs \
       gstreamer1-libav \
       pipewire pipewire-pulseaudio pipewire-alsa wireplumber \
       gstreamer1-plugins-base \
@@ -146,18 +157,11 @@ RUN dnf install -y --setopt=install_weak_deps=False \
 # ---------------------------------------------------------------------------
 # Web app runtime and system plumbing.
 #
-# Fedora's Chromium decodes video with the system ffmpeg, and Fedora's ffmpeg
-# has no H.264 or HEVC decoder of its own, only OpenH264, which plays nothing
-# past the simplest H.264 profile. YouTube TV's live channels are H.264, and
-# played "This format is not supported". libavcodec-freeworld is RPM Fusion's
-# full build of the same library; its directory is searched first, so Chromium
-# loads it without being told. It must match libavcodec-free's version, so dnf
-# may hold Fedora's ffmpeg a release back until RPM Fusion catches up; the
-# check below fails the build if the pair ever stops giving Chromium H.264.
+# Chromium decodes video with the system ffmpeg, which is RPM Fusion's full one,
+# installed with the media stack above.
 # ---------------------------------------------------------------------------
 RUN dnf install -y --setopt=install_weak_deps=False \
       chromium \
-      libavcodec-freeworld \
       NetworkManager-wifi \
       plymouth plymouth-system-theme \
       plymouth-plugin-script \
@@ -171,11 +175,21 @@ RUN dnf install -y --setopt=install_weak_deps=False \
       flatpak \
  && dnf clean all
 
-# Fail the build rather than ship a Chromium that cannot play live TV: the
-# libavcodec it links against, found the way it finds it, must decode H.264
-# and HEVC.
+# Fail the build rather than ship a Chromium that cannot start, or cannot play
+# live TV. Every page and every app on this television is a Chromium window.
+#   - Every symbol it needs must resolve: ldd -r lists any that do not, which
+#     is how a mismatched ffmpeg shows up, and running it proves it starts.
+#   - Fedora's ffmpeg-free must be absent, not mixed in.
+#   - The libavcodec it links against, found the way it finds it, must decode
+#     H.264 and HEVC.
 RUN set -e; \
-    AVCODEC="$(ldd /usr/lib64/chromium-browser/chromium-browser | awk '/libavcodec/ {print $1}')"; \
+    BIN=/usr/lib64/chromium-browser/chromium-browser; \
+    if ldd -r "$BIN" 2>&1 | grep -E 'undefined symbol|not found'; then \
+      echo "Chromium has unresolved libraries or symbols" >&2; exit 1; fi; \
+    chromium-browser --version; \
+    if rpm -q libavcodec-free; then \
+      echo "Fedora's ffmpeg-free is installed beside RPM Fusion's" >&2; exit 1; fi; \
+    AVCODEC="$(ldd "$BIN" | awk '/libavcodec/ {print $1}')"; \
     test -n "$AVCODEC"; \
     python3 -c 'import ctypes, sys; lib = ctypes.CDLL(sys.argv[1]); \
 lib.avcodec_find_decoder_by_name.restype = ctypes.c_void_p; \
