@@ -192,7 +192,7 @@ def now_iso() -> str:
 
 def record() -> dict:
     try:
-        return write_status(checking=False, **summarise(bootc_status()))
+        return write_status(checking=False, phase="", **summarise(bootc_status()))
     except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired) as e:
         return write_status(checking=False, result="error", error=str(e)[:300])
 
@@ -212,21 +212,78 @@ def download() -> dict:
     if not before["tracking"]:
         return write_status(checking=False, checked=now_iso(),
                             result="unmanaged", error="", **before)
-    write_status(checking=True, **before)
+    # Asking first is quick: only the new image's description is fetched. The
+    # download itself can be the whole system, gigabytes, and the page must be
+    # able to say which of the two is happening rather than "checking" for an
+    # hour.
+    write_status(checking=True, phase="checking", detail="", **before)
     try:
-        done = subprocess.run(["bootc", "upgrade", "--quiet"],
-                              capture_output=True, text=True,
-                              timeout=UPGRADE_TIMEOUT)
-        failed = done.returncode != 0
-        reason = (done.stderr or done.stdout).strip().splitlines()
-    except (OSError, subprocess.TimeoutExpired) as e:
-        failed, reason = True, [str(e)]
+        asked = subprocess.run(["bootc", "upgrade", "--check"],
+                               capture_output=True, text=True, timeout=600)
+        if asked.returncode != 0:
+            raise RuntimeError(last_line(asked.stderr or asked.stdout)
+                               or "bootc upgrade --check failed")
+        offered = waiting_update(bootc_status())
+    except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired) as e:
+        record()
+        return write_status(checked=now_iso(), result="error", error=str(e)[:300])
+    if offered is None:
+        record()
+        return write_status(checked=now_iso(), error="",
+                            result="downloaded" if before.get("staged") else "current")
+
+    write_status(phase="downloading", started=now_iso(), detail="",
+                 offered=offered)
+    failed, reason = fetch()
     after = record()
     if failed:
-        return write_status(checked=now_iso(), result="error",
-                            error=(reason[-1] if reason else "bootc upgrade failed")[:300])
+        return write_status(checked=now_iso(), result="error", error=reason[:300])
     return write_status(checked=now_iso(), error="",
                         result="downloaded" if after.get("staged") else "current")
+
+
+def last_line(text: str) -> str:
+    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    return lines[-1] if lines else ""
+
+
+def waiting_update(host: dict) -> dict | None:
+    """The newer image bootc --check found, or None if there is nothing new.
+
+    bootc keeps what it found as the booted deployment's cachedUpdate. One
+    that is the running image, or the one already downloaded, is not new.
+    """
+    status = host.get("status") or {}
+    booted = status.get("booted") or {}
+    found = describe({"image": booted.get("cachedUpdate")})
+    if not found or not found["digest"]:
+        return None
+    have = {d["digest"] for d in (describe(booted), describe(status.get("staged"))) if d}
+    return None if found["digest"] in have else found
+
+
+def fetch() -> tuple:
+    """Run the download, passing bootc's latest line of progress to the page."""
+    try:
+        proc = subprocess.Popen(["bootc", "upgrade"], stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True, bufsize=1)
+    except OSError as e:
+        return True, str(e)
+    last, shown = "", 0.0
+    deadline = time.time() + UPGRADE_TIMEOUT
+    for line in proc.stdout:
+        line = line.strip()
+        if line:
+            last = line
+        if time.time() - shown > 3 and last:
+            write_status(detail=last[:160])
+            shown = time.time()
+        if time.time() > deadline:
+            proc.kill()
+            return True, "the download took too long"
+    if last:
+        write_status(detail=last[:160])
+    return proc.wait() != 0, last or "bootc upgrade failed"
 
 
 def in_window(moment: dt.datetime) -> bool:
@@ -267,6 +324,19 @@ def lock():
     return handle
 
 
+def safely(step) -> dict:
+    """Run a step, and never leave the page saying "checking" after it.
+
+    Anything unexpected is written down as the reason the check failed; the
+    page otherwise showed "Checking for an update" until the next restart.
+    """
+    try:
+        return step()
+    except Exception as e:  # noqa: BLE001 - the page must hear about anything
+        return write_status(checking=False, checked=now_iso(), result="error",
+                            error=f"{type(e).__name__}: {e}"[:300])
+
+
 def cmd_auto(_args) -> int:
     held = lock()
     if not enabled():
@@ -274,7 +344,7 @@ def cmd_auto(_args) -> int:
         write_status(result="off")
         print("automatic updates are off")
         return 0
-    state = download()
+    state = safely(download)
     print(f"check: {state.get('result')} {state.get('error', '')}".rstrip())
     if not state.get("staged"):
         return 0 if state.get("result") != "error" else 1
@@ -295,9 +365,9 @@ def cmd_check(_args) -> int:
         (config_dir() / REQUEST_NAME).unlink()
     except OSError:
         pass
-    write_status(checking=True)
+    write_status(checking=True, phase="checking", detail="")
     with lock():
-        state = download()
+        state = safely(download)
     print(f"check: {state.get('result')} {state.get('error', '')}".rstrip())
     return 0 if state.get("result") != "error" else 1
 
@@ -340,6 +410,11 @@ def version_line(state: dict) -> str:
 
 
 def status_line(state: dict) -> str:
+    if state.get("checking") and state.get("phase") == "downloading":
+        started = when(state.get("started", ""))
+        return ("Downloading the new version" + (f", since {started}" if started else "")
+                + ". The first one after installing is the whole system, a few GB,"
+                " and can take a while. It carries on if you leave this page.")
     if state.get("checking"):
         return "Checking for an update…"
     if state.get("staged"):

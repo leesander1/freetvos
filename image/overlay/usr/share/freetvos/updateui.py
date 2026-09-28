@@ -162,6 +162,8 @@ def model(update) -> list:
         {"kind": "info", "label": update.version_line(state)},
         {"kind": "info", "label": update.status_line(state)},
     ]
+    if state.get("checking") and state.get("detail"):
+        rows.append({"kind": "info", "label": state["detail"]})
     if not state.get("checking"):
         rows.append({"kind": "action", "path": "/check",
                      "busy": "Asking for an update…",

@@ -116,6 +116,63 @@ def main() -> int:
               up.summarise(host(staged="sha256:aaa"))["staged"], None)
         check("nothing staged is nothing waiting", up.summarise(host())["staged"], None)
 
+        print("check first, then download")
+        h = host()
+        check("nothing found is nothing waiting", up.waiting_update(h), None)
+        h["status"]["booted"]["cachedUpdate"] = {"image": {"image": "x"},
+                                                 "imageDigest": "sha256:ccc",
+                                                 "timestamp": "2026-09-29T01:00:00Z"}
+        check("a newer image found is waiting", (up.waiting_update(h) or {}).get("digest"),
+              "sha256:ccc")
+        h["status"]["booted"]["cachedUpdate"]["imageDigest"] = "sha256:aaa"
+        check("the running image is not new", up.waiting_update(h), None)
+        staged = host(staged="sha256:ccc")
+        staged["status"]["booted"]["cachedUpdate"] = {"imageDigest": "sha256:ccc"}
+        check("nor the one already downloaded", up.waiting_update(staged), None)
+        check("the last line of output", up.last_line("a\n\n  b  \n"), "b")
+
+        def broken():
+            raise KeyError("imageDigest")
+        state = up.safely(broken)
+        check("a step that breaks is written down as a failed check",
+              (state["checking"], state["result"], state["error"]),
+              (False, "error", "KeyError: 'imageDigest'"))
+
+        # A stand-in bootc: status from a file, --check finds a new image, and
+        # the download prints progress and stages it.
+        fake = Path(tmp) / "bin"
+        fake.mkdir()
+        (fake / "bootc").write_text(f"""#!/usr/bin/env python3
+import json, sys, time
+from pathlib import Path
+state = Path({str(Path(tmp) / "host.json")!r})
+h = json.loads(state.read_text())
+args = sys.argv[1:]
+if args[:1] == ["status"]:
+    print(json.dumps(h))
+elif args == ["upgrade", "--check"]:
+    h["status"]["booted"]["cachedUpdate"] = {{"image": {{"image": "x"}},
+        "imageDigest": "sha256:new", "timestamp": "2026-09-29T01:00:00Z"}}
+    state.write_text(json.dumps(h)); print("Update available")
+elif args == ["upgrade"]:
+    for n in (1, 2, 3):
+        print(f"Fetching layer {{n}}/3", flush=True)
+    h["status"]["staged"] = {{"image": {{"image": {{"image": "x"}},
+        "imageDigest": "sha256:new", "timestamp": "2026-09-29T01:00:00Z"}}}}
+    state.write_text(json.dumps(h))
+""")
+        (fake / "bootc").chmod(0o755)
+        (Path(tmp) / "host.json").write_text(json.dumps(host()))
+        os.environ["PATH"] = f"{fake}:{os.environ['PATH']}"
+        state = up.download()
+        check("a found update is downloaded and waits",
+              (state["result"], (state.get("staged") or {}).get("digest"), state["checking"]),
+              ("downloaded", "sha256:new", False))
+        check("the page was told it was downloading, with bootc's progress",
+              (state.get("phase"), state.get("detail")), ("", "Fetching layer 3/3"))
+        state = up.download()
+        check("asking again finds nothing more", state["result"], "downloaded")
+
         print("restarting")
         check("a sounding stream is playing", up.sink_inputs_playing(PACTL_PLAYING), True)
         check("a paused one is not", up.sink_inputs_playing(PACTL_PAUSED), False)
@@ -140,6 +197,10 @@ def main() -> int:
         check("nonsense says nothing", up.when("soon"), "")
         check("up to date", up.status_line({"result": "current"}), "Up to date")
         check("checking", up.status_line({"checking": True}), "Checking for an update…")
+        check("downloading says so, and that it is big the first time",
+              up.status_line({"checking": True, "phase": "downloading"}).startswith(
+                  "Downloading the new version") and "a few GB" in
+              up.status_line({"checking": True, "phase": "downloading"}), True)
         check("an update waiting says how it finishes",
               up.status_line({"staged": {"built": ""}, "result": "downloaded"}),
               "An update is ready. It finishes when the TV restarts.")
@@ -173,6 +234,9 @@ def main() -> int:
               "Restart now to finish the update" in labels, True)
         labels = [r.get("label") for r in rows_for({"checking": True})]
         check("no Check now while checking", "Check for an update now" in labels, False)
+        labels = [r.get("label") for r in rows_for({"checking": True, "phase": "downloading",
+                                                    "detail": "Fetching layer 2/9"})]
+        check("bootc's progress is shown while downloading", "Fetching layer 2/9" in labels, True)
         up.set_enabled(False)
         field = next(r for r in rows_for({}) if r["kind"] == "field")
         check("the switch shows what is saved", field["value"], "off")

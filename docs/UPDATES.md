@@ -20,6 +20,11 @@ running and whether a new one is waiting.
 
 Closing the page does not stop a check or a download already under way.
 
+Check now asks first, which takes seconds, and only then downloads. While it
+downloads, the page says so, since when, and shows bootc's latest line of
+progress. A check that fails in any way says why, rather than leaving the page
+on "Checking".
+
 ## When it happens
 
 - **Every night**, at a random time between 2:15 and 3:00, the television looks

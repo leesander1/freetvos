@@ -7,5 +7,6 @@ Wants=network-online.target
 Type=oneshot
 ExecStart=/usr/bin/freetvos-update check
 TimeoutStartSec=4h
+# Asked for by someone waiting at the page, so not at idle priority: that
+# could leave a download crawling behind anything else reading the disk.
 Nice=10
-IOSchedulingClass=idle
