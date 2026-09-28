@@ -168,13 +168,17 @@ if [ "$DRM" = "yes" ]; then
   CDM_SO="/opt/google/chrome/WidevineCdm/_platform_specific/$CDM_PLATFORM/libwidevinecdm.so"
 
   if [ ! -e "$CDM_SO" ]; then
-    # If the device is already fetching it, say that instead of asking for a
-    # command. On first boot this is the usual case, and telling someone to open
-    # a terminal when the thing is already downloading is just wrong.
-    if systemctl is-active --quiet freetvos-widevine-install.service 2>/dev/null; then
-      MSG="$NAME needs Widevine, which is downloading now. Try again in a minute."
+    # Ask for it now rather than at the timer's next turn: a root path unit
+    # watches for this file and starts the download. Then say what is actually
+    # happening. "Not installed" was all this said before, which reads as
+    # broken when the real answer is "no network yet" or "nearly there".
+    REQUEST="${XDG_CONFIG_HOME:-$HOME/.config}/freetvos/widevine-request"
+    mkdir -p "$(dirname "$REQUEST")" && : > "$REQUEST" || true
+    NET="$(nmcli -t -f STATE general 2>/dev/null || true)"
+    if [ "${NET#connected}" = "$NET" ] && [ -n "$NET" ]; then
+      MSG="$NAME needs Widevine, which downloads by itself once the TV is online. Join a network in Setup, then try again in a few minutes."
     else
-      MSG="$NAME needs Widevine, which is not installed."
+      MSG="$NAME needs Widevine, which is downloading now, about 140 MB. Try again in a minute or two."
     fi
     # A television has no terminal. Say it on screen, or the tile just looks
     # dead and the reason is buried in a log nobody will ever open.
@@ -187,7 +191,7 @@ if [ "$DRM" = "yes" ]; then
     fi
     if command -v kdialog >/dev/null 2>&1; then
       kdialog --title "$NAME unavailable" \
-        --error "$MSG\n\nRun this once from a terminal or over ssh:\n  sudo freetvos-widevine-install" &
+        --error "$MSG\n\nIf it never arrives, run this over ssh:\n  sudo freetvos-widevine-install" &
     elif command -v notify-send >/dev/null 2>&1; then
       notify-send -u critical "$NAME unavailable" \
         "$MSG Run: sudo freetvos-widevine-install"

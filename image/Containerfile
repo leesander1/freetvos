@@ -316,7 +316,8 @@ RUN systemctl enable sddm avahi-daemon bluetooth NetworkManager sshd \
  && systemctl enable freetvos-airplay.service freetvos-firstboot.service freetvos-dial.service \
  && systemctl set-default graphical.target \
  && if [ "$BUNDLE_WIDEVINE" != "yes" ]; then \
-      systemctl enable freetvos-widevine-install.timer; \
+      systemctl enable freetvos-widevine-install.timer \
+        freetvos-widevine-request.path; \
     fi
 
 # Updates. bootc's own timer downloads an update and restarts the machine the

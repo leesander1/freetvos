@@ -195,8 +195,10 @@ so it is there from first boot with no command to run and no network needed.
 
 Set `BUNDLE_WIDEVINE="no"`
 in `brand/brand.env` before building anything that leaves the machine; the
-device then fetches it itself on first boot, retrying until the network is up,
-which is what Raspberry Pi OS and LibreELEC do.
+device then fetches it itself on first boot, retrying every five minutes until
+the network is up, which is what Raspberry Pi OS and LibreELEC do. Opening a
+service that needs it before it has arrived starts the download straight away,
+and says whether it is downloading or waiting for a network.
 
 Either way `freetvos-widevine-check` confirms it on screen.
 

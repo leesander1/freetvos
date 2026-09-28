@@ -6,7 +6,6 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/usr/bin/freetvos-update check
-StateDirectory=freetvos
 TimeoutStartSec=4h
 Nice=10
 IOSchedulingClass=idle

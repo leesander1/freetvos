@@ -6,7 +6,8 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/usr/bin/freetvos-update auto
-StateDirectory=freetvos
+# No state directory setting: /var/lib/freetvos belongs to the TV account,
+# which DIAL runs as, and one here would hand it to root at every start.
 # A first download is the whole system, a few gigabytes, and inside the night
 # window the run then waits for whatever is playing to stop. Neither is a hang.
 TimeoutStartSec=6h

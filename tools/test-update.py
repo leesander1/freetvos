@@ -189,6 +189,28 @@ def main() -> int:
     check("Check now watches the file the page leaves",
           "PathExists=/var/home/tv/.config/freetvos/update-request"
           in (units / "freetvos-update-check.path").read_text(), True)
+    for unit in units.glob("freetvos-update*"):
+        check(f"{unit.name} leaves /var/lib/freetvos to the TV account",
+              "StateDirectory=" in unit.read_text(), False)
+    check("DIAL, which runs as that account, still keeps its state there",
+          "StateDirectory=freetvos" in (units / "freetvos-dial.service").read_text()
+          and "User=tv" in (units / "freetvos-dial.service").read_text(), True)
+
+    print("Widevine on request")
+    launcher = (REPO / "webapps/freetvos-webapp").read_text()
+    check("opening a service without it asks for it",
+          'REQUEST="${XDG_CONFIG_HOME:-$HOME/.config}/freetvos/widevine-request"' in launcher,
+          True)
+    check("the request is watched where the launcher leaves it",
+          "PathExists=/var/home/tv/.config/freetvos/widevine-request"
+          in (units / "freetvos-widevine-request.path").read_text(), True)
+    request = (units / "freetvos-widevine-request.service").read_text()
+    check("and cleared before the download starts, so it fires once",
+          request.index("rm -f") < request.index("systemctl start"), True)
+    check("the watch is enabled with the timer",
+          "freetvos-widevine-request.path" in containerfile, True)
+    check("offline, the message says to join a network",
+          "Join a network in Setup" in launcher, True)
     workflow = (REPO / ".github/workflows/installer.yml").read_text()
     check("installs follow the published image",
           "bootc switch --mutate-in-place --transport registry ${UPDATE_IMAGE}" in workflow,

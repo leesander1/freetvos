@@ -1,0 +1,14 @@
+[Unit]
+Description=Watch for a service asking for Widevine
+# Same condition as the install: nothing to ask for once it is there.
+ConditionPathExists=!/var/lib/freetvos/widevine/libwidevinecdm.so
+
+[Path]
+# Opening a Widevine service without the module leaves this file, so the
+# download starts then instead of at the timer's next five-minute turn. The
+# launcher runs as the television account and cannot start a root service.
+PathExists=/var/home/tv/.config/freetvos/widevine-request
+Unit=freetvos-widevine-request.service
+
+[Install]
+WantedBy=multi-user.target

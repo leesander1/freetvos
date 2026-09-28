@@ -1,0 +1,8 @@
+[Unit]
+Description=Start fetching the Widevine module now
+
+[Service]
+Type=oneshot
+# Removed first, so the path unit is not triggered again by the same request.
+ExecStart=/usr/bin/rm -f /var/home/tv/.config/freetvos/widevine-request
+ExecStart=/usr/bin/systemctl start --no-block freetvos-widevine-install.service
