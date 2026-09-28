@@ -53,6 +53,10 @@ An image built there leaves Widevine out, because the repository is public and
 the module may not be redistributed. The television fetches it itself on first
 boot; `freetvos-widevine-check` shows when it has arrived.
 
+A television installed this way also updates itself from then on, from the
+image the same workflow publishes, so this is the last time it needs a USB
+stick. See `docs/UPDATES.md`.
+
 The rest of this page is the manual route, for a machine that is not a
 Framework or a build that has to include something the public one cannot.
 

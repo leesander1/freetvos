@@ -100,12 +100,20 @@ ssh -p 2222 tv@localhost
 | `docs/MEETINGS.md` | Zoom, Meet and Teams calls, and what is verified about the camera |
 | `docs/RESOURCES.md` | How much memory and CPU it uses, and how much RAM a box needs |
 | `docs/INSTALL.md` | Getting it onto real x86_64 hardware |
+| `docs/UPDATES.md` | Automatic updates, the switch for them, and going back |
 
 ## First run
 
 The first time it is turned on it opens a wizard: join a network, then pick the
 apps you use. Both are skippable and **Setup** on the home screen runs it again.
 See `docs/SETUP.md`.
+
+## Updates
+
+The television updates itself: a new version downloads in the background and
+it restarts to finish between 2 and 5:30 in the morning, never while something
+is playing. **Updates** on the home screen switches that off, checks now, and
+shows which version is running. See `docs/UPDATES.md`.
 
 ## Adding an app
 

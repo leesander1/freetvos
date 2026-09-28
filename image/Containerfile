@@ -241,7 +241,7 @@ RUN chmod 0755 /usr/bin/freetvos-webapp /usr/bin/freetvos-firstboot \
               /usr/bin/freetvos-bars \
               /usr/bin/freetvos-livetv /usr/bin/freetvos-livetv-player \
               /usr/bin/freetvos-meet /usr/bin/freetvos-tuner \
-              /usr/bin/freetvos-pin-host \
+              /usr/bin/freetvos-pin-host /usr/bin/freetvos-update \
  && python3 /usr/share/freetvos/generate-desktop-entries.py \
  && python3 /usr/share/freetvos/curate-apps.py \
  && python3 /usr/share/freetvos/brand-os-release.py \
@@ -302,6 +302,14 @@ RUN systemctl enable sddm avahi-daemon bluetooth NetworkManager sshd \
  && if [ "$BUNDLE_WIDEVINE" != "yes" ]; then \
       systemctl enable freetvos-widevine-install.timer; \
     fi
+
+# Updates. bootc's own timer downloads an update and restarts the machine the
+# moment it has one, whatever is on screen; FreeTVOS's waits for the night and
+# for nothing to be playing, and has a switch on the Updates page. So bootc's
+# is masked and FreeTVOS's enabled. See docs/UPDATES.md.
+RUN systemctl mask bootc-fetch-apply-updates.timer \
+ && systemctl enable freetvos-update.timer freetvos-update-check.path \
+      freetvos-update-status.service
 
 # bootc requires /var to stay empty at build time; anything written here would
 # become a one-time factory default rather than real state.

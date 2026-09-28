@@ -11,6 +11,11 @@
 # not allow redistributing it, so an image built here must not carry it. The
 # television fetches it itself on first boot instead, as the image already does
 # whenever it is built without the module.
+#
+# The image is also published, to GitHub's container registry, and that is how
+# televisions update: each one follows ghcr.io/<owner>/<repo>:latest and
+# checks it every night (docs/UPDATES.md). Every push to main that reaches this
+# workflow is therefore an update for every television following it.
 
 name: Installer ISO
 
@@ -32,6 +37,7 @@ concurrency:
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
   iso:
@@ -56,7 +62,7 @@ jobs:
           grep '^BUNDLE_WIDEVINE=' brand/brand.env
 
       - name: Build the image
-        run: sudo tools/build.sh amd64
+        run: sudo IMAGE_SOURCE="https://github.com/${GITHUB_REPOSITORY}" tools/build.sh amd64
 
       # Unattended, and it only ever erases nvme0n1: the one M.2 SSD a
       # Framework mainboard has. Every other disk is ignored, so the USB stick
@@ -79,10 +85,16 @@ jobs:
       # The bootloader line gives an installed system the same kernel options
       # as the VM's disk: quiet and splash hand the boot to the FreeTVOS
       # Plymouth theme instead of a screen of scrolling text.
+      #
+      # bootc switch points the installed system at the published image, so it
+      # can update. Without it, it would follow the copy on the USB stick,
+      # which can never be downloaded again. --mutate-in-place only rewrites
+      # where updates come from; nothing is downloaded during the install.
       - name: Installer settings
         run: |
           mkdir -p output
-          cat > output/config.toml <<'EOF'
+          UPDATE_IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}:latest"
+          cat > output/config.toml <<EOF
           [customizations.installer.kickstart]
           contents = """
           text --non-interactive
@@ -96,6 +108,7 @@ jobs:
           reboot --eject
           %post
           systemctl set-default graphical.target
+          bootc switch --mutate-in-place --transport registry ${UPDATE_IMAGE}
           %end
           """
           EOF
@@ -117,6 +130,21 @@ jobs:
           sudo chown "$USER" output/freetvos-amd64-installer.iso
           ls -lh output/freetvos-amd64-installer.iso
           sha256sum output/freetvos-amd64-installer.iso | tee output/freetvos-amd64-installer.iso.sha256
+
+      # After the installer, so a build whose installer fails publishes
+      # nothing. The commit's own tag is kept beside latest, so any version
+      # can be gone back to with bootc switch.
+      - name: Publish the image for updates
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          . brand/brand.env
+          DEST="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "$TOKEN" | sudo podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+          for tag in latest "${GITHUB_SHA::7}"; do
+            sudo podman push "${IMAGE_REF}:${BRAND_VERSION}-amd64" "docker://${DEST}:${tag}"
+          done
+          echo "Published ${DEST}:latest and ${DEST}:${GITHUB_SHA::7}"
 
       - name: Offer the ISO for download
         uses: actions/upload-artifact@v4

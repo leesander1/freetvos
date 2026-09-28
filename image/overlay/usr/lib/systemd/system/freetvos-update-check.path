@@ -1,0 +1,11 @@
+[Unit]
+Description=Watch for Check now on the Updates page
+
+[Path]
+# The page runs as the television account and cannot start a root service
+# itself, so it leaves this file and the service below removes it.
+PathExists=/var/home/tv/.config/freetvos/update-request
+Unit=freetvos-update-check.service
+
+[Install]
+WantedBy=multi-user.target

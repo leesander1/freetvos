@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Updates
+Comment=Keep this television up to date, or check for a new version now
+Exec=/usr/bin/freetvos-update show
+Icon=freetvos-updates
+Categories=Settings;
+Terminal=false
+StartupNotify=true
+X-KDE-FormFactor=tv

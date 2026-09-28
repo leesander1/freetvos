@@ -1,0 +1,404 @@
+#!/usr/bin/env python3
+"""Keep the television up to date: download new versions, restart at night.
+
+The whole system is one container image, published by the build each time it
+changes. bootc downloads a new one beside the running one and switches to it on
+the next start, keeping settings, logins and everything else under /var and
+/etc. So an update is two steps: download, which can happen whenever, and a
+restart, which must not happen in the middle of a film. Downloads happen when
+the timer fires; restarts only between RESTART_FROM and RESTART_UNTIL, and only
+while nothing is playing. Missed that window, an update waits and finishes the
+next time the television is restarted anyway.
+
+  freetvos-update show      the page, which is what the Updates tile opens
+  freetvos-update status    this version, whether a new one waits, the last check
+  freetvos-update on        switch automatic updates on (the default)
+  freetvos-update off       switch them off
+
+Run by systemd, as root:
+
+  freetvos-update auto      the timer: check, download, restart if it is night
+  freetvos-update check     check and download now, never restart ("Check now")
+  freetvos-update record    write down what is running, at boot
+
+The switch lives in the television account's own settings, so the page can
+change it without asking for a password; the root side only reads it. The
+state the page shows is written by the root side to STATUS, which anyone can
+read, because only root may ask bootc.
+"""
+import argparse
+import datetime as dt
+import fcntl
+import json
+import os
+import pwd
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+TV_USER = os.environ.get("FREETVOS_TV_USER", "tv")
+STATUS = Path(os.environ.get("FREETVOS_UPDATE_STATUS",
+                             "/var/lib/freetvos/update-status.json"))
+LOCK = Path("/run/freetvos-update.lock")
+REQUEST_NAME = "update-request"
+
+# Restarting to finish an update: from 2 until 5:30 in the morning.
+RESTART_FROM = dt.time(2, 0)
+RESTART_UNTIL = dt.time(5, 30)
+# While something plays inside that window, look again this often.
+RECHECK_SECONDS = 600
+UPGRADE_TIMEOUT = 3 * 3600
+
+
+# ---------------------------------------------------------------------------
+# The switch.
+# ---------------------------------------------------------------------------
+
+
+def config_dir() -> Path:
+    """The television account's settings folder, whoever is asking."""
+    if os.environ.get("FREETVOS_UPDATE_CONFIG"):
+        return Path(os.environ["FREETVOS_UPDATE_CONFIG"])
+    if os.geteuid() == 0:
+        try:
+            home = Path(pwd.getpwnam(TV_USER).pw_dir)
+        except KeyError:
+            home = Path("/var/home") / TV_USER
+        return home / ".config/freetvos"
+    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    return Path(base) / "freetvos"
+
+
+def settings_path() -> Path:
+    return config_dir() / "updates.json"
+
+
+def enabled() -> bool:
+    """On unless switched off. A file that cannot be read leaves them on:
+    a television that silently stops updating is worse than one that updates."""
+    try:
+        data = json.loads(settings_path().read_text())
+    except (OSError, ValueError):
+        return True
+    return not (isinstance(data, dict) and data.get("automatic") is False)
+
+
+def set_enabled(on: bool) -> None:
+    path = settings_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"automatic": bool(on)}, indent=2) + "\n")
+    tmp.replace(path)
+    if os.geteuid() == 0:
+        try:
+            pw = pwd.getpwnam(TV_USER)
+            os.chown(path, pw.pw_uid, pw.pw_gid)
+        except (KeyError, OSError):
+            pass
+
+
+def check_pending() -> bool:
+    """A check was asked for and the root side has not begun it yet."""
+    return (config_dir() / REQUEST_NAME).exists()
+
+
+def request_check() -> None:
+    """Ask the root side to check now. A path unit watches for this file."""
+    path = config_dir() / REQUEST_NAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(str(time.time()))
+
+
+# ---------------------------------------------------------------------------
+# What bootc says.
+# ---------------------------------------------------------------------------
+
+
+def bootc_status() -> dict:
+    done = subprocess.run(["bootc", "status", "--format=json"],
+                          capture_output=True, text=True, timeout=120)
+    if done.returncode != 0:
+        raise RuntimeError(done.stderr.strip() or "bootc status failed")
+    return json.loads(done.stdout)
+
+
+def describe(entry) -> dict | None:
+    """One deployment, booted or staged, as the page wants it."""
+    if not isinstance(entry, dict):
+        return None
+    image = entry.get("image") or {}
+    ref = image.get("image") or {}
+    return {
+        "image": ref.get("image", ""),
+        "version": image.get("version") or "",
+        "built": image.get("timestamp") or "",
+        "digest": image.get("imageDigest", ""),
+    }
+
+
+def tracking(host: dict) -> str:
+    """The published image this television follows, or "" if none.
+
+    Installed from a USB stick without being pointed anywhere, a system
+    follows the copy on the stick, which cannot be downloaded again.
+    """
+    spec = (host.get("spec") or {}).get("image") or {}
+    ref = spec.get("image", "")
+    if spec.get("transport", "registry") != "registry":
+        return ""
+    if not ref or ref.startswith("localhost/"):
+        return ""
+    return ref
+
+
+def summarise(host: dict) -> dict:
+    status = host.get("status") or {}
+    booted = describe(status.get("booted"))
+    staged = describe(status.get("staged"))
+    if staged and booted and staged["digest"] == booted["digest"]:
+        staged = None
+    return {"tracking": tracking(host), "booted": booted, "staged": staged}
+
+
+# ---------------------------------------------------------------------------
+# The status file the page reads.
+# ---------------------------------------------------------------------------
+
+
+def read_status() -> dict:
+    try:
+        data = json.loads(STATUS.read_text())
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def write_status(**changes) -> dict:
+    data = read_status()
+    data.update(changes)
+    data["automatic"] = enabled()
+    STATUS.parent.mkdir(parents=True, exist_ok=True)
+    tmp = STATUS.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2) + "\n")
+    tmp.chmod(0o644)
+    tmp.replace(STATUS)
+    return data
+
+
+def now_iso() -> str:
+    return dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+
+
+def record() -> dict:
+    try:
+        return write_status(checking=False, **summarise(bootc_status()))
+    except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired) as e:
+        return write_status(checking=False, result="error", error=str(e)[:300])
+
+
+# ---------------------------------------------------------------------------
+# Checking and restarting.
+# ---------------------------------------------------------------------------
+
+
+def download() -> dict:
+    """Ask for a newer image and download it if there is one. Never restarts."""
+    try:
+        before = summarise(bootc_status())
+    except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired) as e:
+        return write_status(checking=False, checked=now_iso(), result="error",
+                            error=str(e)[:300])
+    if not before["tracking"]:
+        return write_status(checking=False, checked=now_iso(),
+                            result="unmanaged", error="", **before)
+    write_status(checking=True, **before)
+    try:
+        done = subprocess.run(["bootc", "upgrade", "--quiet"],
+                              capture_output=True, text=True,
+                              timeout=UPGRADE_TIMEOUT)
+        failed = done.returncode != 0
+        reason = (done.stderr or done.stdout).strip().splitlines()
+    except (OSError, subprocess.TimeoutExpired) as e:
+        failed, reason = True, [str(e)]
+    after = record()
+    if failed:
+        return write_status(checked=now_iso(), result="error",
+                            error=(reason[-1] if reason else "bootc upgrade failed")[:300])
+    return write_status(checked=now_iso(), error="",
+                        result="downloaded" if after.get("staged") else "current")
+
+
+def in_window(moment: dt.datetime) -> bool:
+    return RESTART_FROM <= moment.time() < RESTART_UNTIL
+
+
+def sink_inputs_playing(pactl_output: str) -> bool:
+    """Whether pactl's list of streams has one that is actually sounding.
+
+    A paused player's stream is corked, and Chromium closes an idle one after
+    a few seconds, so an uncorked stream means something is playing now.
+    """
+    return any(line.strip() == "Corked: no" for line in pactl_output.splitlines())
+
+
+def playing() -> bool:
+    try:
+        pw = pwd.getpwnam(TV_USER)
+    except KeyError:
+        return False
+    runtime = f"/run/user/{pw.pw_uid}"
+    if not os.path.isdir(runtime):
+        return False
+    try:
+        done = subprocess.run(
+            ["runuser", "-u", TV_USER, "--", "env", f"XDG_RUNTIME_DIR={runtime}",
+             "pactl", "list", "sink-inputs"],
+            capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return sink_inputs_playing(done.stdout)
+
+
+def lock():
+    """One bootc at a time: the nightly run and Check now can overlap."""
+    handle = open(LOCK, "w")
+    fcntl.flock(handle, fcntl.LOCK_EX)
+    return handle
+
+
+def cmd_auto(_args) -> int:
+    held = lock()
+    if not enabled():
+        record()
+        write_status(result="off")
+        print("automatic updates are off")
+        return 0
+    state = download()
+    print(f"check: {state.get('result')} {state.get('error', '')}".rstrip())
+    if not state.get("staged"):
+        return 0 if state.get("result") != "error" else 1
+    while in_window(dt.datetime.now()):
+        if not playing():
+            print("restarting to finish the update")
+            held.close()
+            subprocess.run(["systemctl", "reboot"], check=False)
+            return 0
+        print("something is playing; looking again later")
+        time.sleep(RECHECK_SECONDS)
+    print("outside the night window; the update finishes on the next restart")
+    return 0
+
+
+def cmd_check(_args) -> int:
+    try:
+        (config_dir() / REQUEST_NAME).unlink()
+    except OSError:
+        pass
+    write_status(checking=True)
+    with lock():
+        state = download()
+    print(f"check: {state.get('result')} {state.get('error', '')}".rstrip())
+    return 0 if state.get("result") != "error" else 1
+
+
+def cmd_record(_args) -> int:
+    with lock():
+        state = record()
+    print(json.dumps(state, indent=2))
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# For people.
+# ---------------------------------------------------------------------------
+
+
+def when(stamp: str, today: dt.date | None = None) -> str:
+    """An ISO time as a person would say it: "today at 3:12", "4 October"."""
+    try:
+        moment = dt.datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+    except (AttributeError, ValueError):
+        return ""
+    if moment.tzinfo is not None:
+        moment = moment.astimezone()
+    today = today or dt.date.today()
+    clock = f"{moment.hour % 12 or 12}:{moment.minute:02d} {'am' if moment.hour < 12 else 'pm'}"
+    if moment.date() == today:
+        return f"today at {clock}"
+    if moment.date() == today - dt.timedelta(days=1):
+        return f"yesterday at {clock}"
+    day = f"{moment.day} {moment.strftime('%B')}"
+    return day if moment.year == today.year else f"{day} {moment.year}"
+
+
+def version_line(state: dict) -> str:
+    booted = state.get("booted") or {}
+    built = when(booted.get("built", ""))
+    name = f"Version {booted['version']}" if booted.get("version") else "This version"
+    return f"{name}, built {built}" if built else name
+
+
+def status_line(state: dict) -> str:
+    if state.get("checking"):
+        return "Checking for an update…"
+    if state.get("staged"):
+        built = when((state["staged"] or {}).get("built", ""))
+        return ("An update is ready" + (f", built {built}" if built else "")
+                + ". It finishes when the TV restarts.")
+    result = state.get("result")
+    checked = when(state.get("checked", ""))
+    if result == "unmanaged":
+        return "This TV is not set up to receive updates yet. See UPDATES in the FreeTVOS docs."
+    if result == "error":
+        return f"The last check did not work{f' ({checked})' if checked else ''}: {state.get('error', '')}"
+    if result == "current":
+        return f"Up to date, checked {checked}" if checked else "Up to date"
+    if result == "off" or not enabled():
+        return "Automatic updates are off"
+    return "Not checked yet"
+
+
+def cmd_status(_args) -> int:
+    state = read_status()
+    print("automatic updates:", "on" if enabled() else "off")
+    print(version_line(state))
+    print(status_line(state))
+    if state.get("tracking"):
+        print("follows:", state["tracking"])
+    return 0
+
+
+def cmd_switch(args) -> int:
+    set_enabled(args.cmd == "on")
+    print("automatic updates", args.cmd)
+    return 0
+
+
+def cmd_show(_args) -> int:
+    sys.path.insert(0, "/usr/share/freetvos")
+    import updateui
+    return updateui.run(sys.modules[__name__])
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description=__doc__.split("\n\n")[0],
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="cmd")
+    sub.add_parser("show").set_defaults(func=cmd_show)
+    sub.add_parser("status").set_defaults(func=cmd_status)
+    sub.add_parser("on").set_defaults(func=cmd_switch)
+    sub.add_parser("off").set_defaults(func=cmd_switch)
+    sub.add_parser("auto").set_defaults(func=cmd_auto)
+    sub.add_parser("check").set_defaults(func=cmd_check)
+    sub.add_parser("record").set_defaults(func=cmd_record)
+    args = parser.parse_args()
+    if not getattr(args, "func", None):
+        parser.print_help()
+        return 2
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

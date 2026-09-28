@@ -1,0 +1,17 @@
+[Unit]
+Description=Check for a FreeTVOS update every night
+
+[Timer]
+# At night, so a download is done and the restart can follow before morning.
+OnCalendar=*-*-* 02:15
+RandomizedDelaySec=45min
+# And a while after every start, for a television that is switched off at the
+# wall overnight: that one downloads during the day, and finishes the update
+# the next time it is switched on. A daytime run never restarts anything.
+OnBootSec=20min
+# Not Persistent: a missed night must not turn into a run on waking, which is
+# the same as the OnBootSec one anyway.
+Unit=freetvos-update.service
+
+[Install]
+WantedBy=timers.target

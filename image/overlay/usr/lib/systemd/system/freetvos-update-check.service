@@ -1,0 +1,12 @@
+[Unit]
+Description=Check for a FreeTVOS update now, without restarting
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/freetvos-update check
+StateDirectory=freetvos
+TimeoutStartSec=4h
+Nice=10
+IOSchedulingClass=idle

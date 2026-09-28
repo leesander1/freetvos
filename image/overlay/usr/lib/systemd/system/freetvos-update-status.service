@@ -1,0 +1,10 @@
+[Unit]
+Description=Write down which FreeTVOS version is running, for the Updates page
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/freetvos-update record
+StateDirectory=freetvos
+
+[Install]
+WantedBy=multi-user.target

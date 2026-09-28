@@ -1,0 +1,15 @@
+[Unit]
+Description=Check for a FreeTVOS update, and restart at night to finish one
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/freetvos-update auto
+StateDirectory=freetvos
+# A first download is the whole system, a few gigabytes, and inside the night
+# window the run then waits for whatever is playing to stop. Neither is a hang.
+TimeoutStartSec=6h
+# Downloading must never make the picture stutter.
+Nice=10
+IOSchedulingClass=idle

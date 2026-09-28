@@ -15,8 +15,14 @@ esac
 TAG="${IMAGE_REF}:${BRAND_VERSION}-${ARCH}"
 echo ">> Building $TAG from quay.io/fedora/fedora-bootc:${BASE_TAG}"
 
+# Where the image is published from, when it is. GitHub's registry uses this to
+# tie the published image to its repository.
+LABELS=()
+[ -n "${IMAGE_SOURCE:-}" ] && LABELS+=( --label "org.opencontainers.image.source=${IMAGE_SOURCE}" )
+
 podman build \
   --platform "linux/${ARCH}" \
+  ${LABELS[@]+"${LABELS[@]}"} \
   --build-arg "BASE_IMAGE=quay.io/fedora/fedora-bootc:${BASE_TAG}" \
   --build-arg "BRAND_ID=${BRAND_ID}" \
   --build-arg "BRAND_NAME=${BRAND_NAME}" \
