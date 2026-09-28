@@ -69,6 +69,12 @@ jobs:
       # it cannot be mounted: the first install on real hardware stopped in
       # emergency mode on "Mount path /home is not canonical". A 40 GB test
       # disk never showed it, because it was too small to get a /home.
+      #
+      # xconfig --startxonboot and the %post both say the same thing: boot to
+      # the television, not a text console. A text-mode install otherwise
+      # writes multi-user.target as the default over the image's graphical
+      # one, so SDDM never starts and the box stops at "fedora login:". The
+      # %post makes it certain even if a later Anaconda ignores xconfig.
       - name: Installer settings
         run: |
           mkdir -p output
@@ -81,7 +87,11 @@ jobs:
           clearpart --all --initlabel --disklabel=gpt --drives=nvme0n1
           autopart --noswap --nohome --type=plain
           rootpw --lock
+          xconfig --startxonboot
           reboot --eject
+          %post
+          systemctl set-default graphical.target
+          %end
           """
           EOF
           cat output/config.toml
