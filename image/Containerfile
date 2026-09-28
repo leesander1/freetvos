@@ -82,9 +82,11 @@ RUN dnf remove -y plasma-welcome || true
 # GPU most streaming video would decode on the processor. The freeworld build
 # is the same driver with those codecs left in.
 #
-# ffmpeg-libs is RPM Fusion's whole ffmpeg, first, so that everything after it
-# (gstreamer, mpv, TVHeadend, Chromium) is installed against it and Fedora's
-# cut-down ffmpeg-free never arrives. Fedora's has no H.264 or HEVC decoder of
+# ffmpeg-libs is RPM Fusion's whole ffmpeg, in place of Fedora's cut-down one,
+# which the Plasma step above has already pulled in as a weak dependency:
+# --allowerasing swaps the six ffmpeg-free libraries out, and nothing else.
+# Everything after it (gstreamer, mpv, TVHeadend, Chromium) is then installed
+# against the one ffmpeg. Fedora's has no H.264 or HEVC decoder of
 # its own, only OpenH264, which plays nothing past the simplest H.264 profile,
 # and Chromium decodes through it: YouTube TV's live channels, which are H.264,
 # said "This format is not supported". All of ffmpeg's libraries must come from
@@ -95,7 +97,7 @@ RUN dnf install -y \
       "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm" \
  && dnf clean all
 
-RUN dnf install -y --setopt=install_weak_deps=False \
+RUN dnf install -y --allowerasing --setopt=install_weak_deps=False \
       ffmpeg-libs \
       gstreamer1-libav \
       pipewire pipewire-pulseaudio pipewire-alsa wireplumber \
