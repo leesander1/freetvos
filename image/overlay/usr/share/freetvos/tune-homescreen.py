@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-"""Start the home screen's rows right under the clock when nothing sits above
-Applications.
+"""Two fixes to Bigscreen's home screen, patched into its shipped QML.
+
+Start the rows right under the clock when nothing sits above Applications, and
+keep the settings panel's view of coloured tiles in step with what is saved
+(see the last edit).
 
 Run at image build time. Bigscreen starts its rows halfway down the screen, which
 leaves room for Favorites and Recent above Applications. With neither, that room
@@ -34,6 +37,30 @@ EDITS = [
      "            const desiredY = (parent.height / 2);\n",
      "            // FreeTVOS: halfway down only when Favorites or Recent fill it.\n"
      "            const desiredY = launcher.hasRowsAboveApps ? (parent.height / 2) : minY;\n"),
+    # Bigscreen's settings panel asks the home screen over D-Bus whether tiles
+    # are coloured, and the D-Bus side answers from its own default, "yes",
+    # because the home screen only ever copies D-Bus values into its settings
+    # and never the other way. The panel then showed coloured tiles as on, and
+    # opening it turned them on: FreeTVOS icons are light art on dark tiles, so
+    # most tiles went white. Telling the D-Bus side the saved values at startup
+    # makes the panel show the truth, and its switch still works.
+    (UI / "main.qml",
+     "        function onUseWallpaperBlurChanged(wallpaperBlur) {\n"
+     "            Plasmoid.configuration.wallpaperBlur = wallpaperBlur;\n"
+     "        }\n"
+     "    }\n",
+     "        function onUseWallpaperBlurChanged(wallpaperBlur) {\n"
+     "            Plasmoid.configuration.wallpaperBlur = wallpaperBlur;\n"
+     "        }\n"
+     "    }\n\n"
+     "    // FreeTVOS: tell the D-Bus side what is saved, so the settings panel\n"
+     "    // reads the real state instead of its own default.\n"
+     "    QtObject {\n"
+     "        Component.onCompleted: {\n"
+     "            BigLauncherDbusAdapterInterface.useColoredTiles(Plasmoid.configuration.coloredTiles);\n"
+     "            BigLauncherDbusAdapterInterface.useWallpaperBlur(Plasmoid.configuration.wallpaperBlur);\n"
+     "        }\n"
+     "    }\n"),
 ]
 
 
