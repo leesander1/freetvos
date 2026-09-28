@@ -64,6 +64,39 @@ jobs:
       - name: Build the image
         run: sudo IMAGE_SOURCE="https://github.com/${GITHUB_REPOSITORY}" tools/build.sh amd64
 
+      # Rechunked, so a television downloads only what changed. Built from
+      # scratch here every time, the image's layers are new bytes in every build
+      # even where nothing changed, and every update was the whole system, some
+      # gigabytes. Fedora's own tool regroups it into layers by package, and
+      # --previous-build keeps the grouping of the image already published, so
+      # a package that did not change lands in a byte-identical layer that a
+      # television already has. A trial of two builds made from scratch, one
+      # file apart, shared 61 of 65 layers: 138 MB new of 1,001 MB.
+      #
+      # The previous build is asked for first and left out if it cannot be
+      # read, so the very first run, or a registry hiccup, costs one full
+      # download on the television rather than a failed build.
+      - name: Rechunk for small updates
+        run: |
+          . brand/brand.env
+          SRC="${IMAGE_REF}:${BRAND_VERSION}-amd64"
+          PREV="docker://ghcr.io/${GITHUB_REPOSITORY,,}:latest"
+          rechunk() {
+            sudo podman run --rm --privileged \
+              -v /var/lib/containers:/var/lib/containers \
+              "quay.io/fedora/fedora-bootc:${FEDORA_RELEASE}-x86_64" \
+              rpm-ostree compose build-chunked-oci --bootc --format-version=2 \
+                --from="$SRC" --output "containers-storage:${SRC}-chunked" "$@"
+          }
+          rechunk --previous-build="$PREV" || rechunk
+          sudo podman tag "${SRC}-chunked" "$SRC"
+          # Only tags go; then the unchunked copy has none left and is pruned.
+          sudo podman rmi "${SRC}-chunked" "${IMAGE_REF}:latest"
+          sudo podman image prune -f
+          sudo podman image inspect "$SRC" --format \
+            '{{len .RootFS.Layers}} layers, version {{index .Config.Labels "org.opencontainers.image.version"}}'
+          df -h /
+
       # Unattended, and it only ever erases nvme0n1: the one M.2 SSD a
       # Framework mainboard has. Every other disk is ignored, so the USB stick
       # it boots from cannot be chosen, and a machine without that drive stops

@@ -281,6 +281,12 @@ elif args == ["upgrade"]:
           True)
     check("the build publishes it", 'docker://${DEST}:${tag}' in workflow
           and "packages: write" in workflow, True)
+    check("rechunked, before the installer is made or anything is published",
+          workflow.index("Rechunk for small updates")
+          < workflow.index("Build the installer ISO")
+          < workflow.index("Publish the image for updates"), True)
+    check("keeping the published image's layer plan, or none if it cannot be read",
+          'rechunk --previous-build="$PREV" || rechunk' in workflow, True)
     check("and never with Widevine in it",
           workflow.index("Leave Widevine out") < workflow.index("Publish the image"), True)
     tile = (REPO / "image/overlay/usr/share/applications/freetvos-updates.desktop").read_text()

@@ -81,6 +81,14 @@ a few gigabytes, even though nothing changed. The copy on the USB stick and the
 published copy are the same system, but they are packed differently, so they
 do not look the same to the download.
 
+After that, an update downloads only what changed. The build regroups the
+image into layers by package (rpm-ostree's `build-chunked-oci`, keeping the
+grouping of the image already published), so a package that did not change
+ends up in a layer the television already has. A trial of two builds made
+from scratch, one file apart, had 138 MB new out of 1,001 MB. Some layers are
+new in every build whatever changed, such as the package database, so even an
+update that changes one file downloads some tens of megabytes or more.
+
 ## Going back
 
 bootc keeps the previous version beside the current one. If an update is bad:
