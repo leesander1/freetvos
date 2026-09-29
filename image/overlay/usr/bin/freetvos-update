@@ -32,6 +32,7 @@ import fcntl
 import json
 import os
 import pwd
+import re
 import subprocess
 import sys
 import time
@@ -223,7 +224,7 @@ def download() -> dict:
         if asked.returncode != 0:
             raise RuntimeError(last_line(asked.stderr or asked.stdout)
                                or "bootc upgrade --check failed")
-        offered = waiting_update(bootc_status())
+        offered = check_answer(asked.stdout, bootc_status())
     except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired) as e:
         record()
         return write_status(checked=now_iso(), result="error", error=str(e)[:300])
@@ -260,6 +261,38 @@ def waiting_update(host: dict) -> dict | None:
         return None
     have = {d["digest"] for d in (describe(booted), describe(status.get("staged"))) if d}
     return None if found["digest"] in have else found
+
+
+def check_answer(output: str, host: dict) -> dict | None:
+    """What bootc upgrade --check found: the update, or None for nothing new.
+
+    Read from what it prints, "Update available for: ..." with a Digest line,
+    or "No changes in: ...". Not from bootc status's cachedUpdate alone: bootc
+    records that only against an image it has already pulled from the same
+    address, and a television installed from a USB stick and then pointed at
+    the published image has pulled nothing from it yet. Reading cachedUpdate
+    alone, such a television said "Up to date" for ever and never updated.
+
+    Output that says neither is treated as an update, so the download runs:
+    bootc upgrade finds out for itself, and costs nothing if there is none.
+    """
+    if re.search(r"^No changes in:", output, re.M):
+        return None
+    digest = re.search(r"^\s*Digest:\s*(sha256:[0-9a-f]+)", output, re.M)
+    version = re.search(r"^\s*Version:\s*(\S+)", output, re.M)
+    found = waiting_update(host) or {}
+    if digest:
+        if found.get("digest") != digest.group(1):
+            found = {"image": "", "built": ""}
+        found["digest"] = digest.group(1)
+    if version and not found.get("version"):
+        found["version"] = version.group(1)
+    status = host.get("status") or {}
+    have = {d["digest"] for d in (describe(status.get("booted")),
+                                  describe(status.get("staged"))) if d}
+    if found.get("digest") in have:
+        return None
+    return found
 
 
 def fetch() -> tuple:

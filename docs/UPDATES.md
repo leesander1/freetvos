@@ -20,7 +20,7 @@ running and whether a new one is waiting.
 
 Closing the page does not stop a check or a download already under way.
 
-Check now asks first, which takes seconds, and only then downloads. While it
+Check now asks first, which takes seconds, and only then downloads. The answer is read from what `bootc upgrade --check` prints, not from bootc status's `cachedUpdate`, which bootc fills only for an image it has already pulled from the same address: a television installed from a USB stick reported "Up to date" for ever when that was all it read. While it
 downloads, the page says so, since when, and shows bootc's latest line of
 progress. A check that fails in any way says why, rather than leaving the page
 on "Checking".

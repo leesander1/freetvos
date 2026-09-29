@@ -130,6 +130,15 @@ def main() -> int:
         staged["status"]["booted"]["cachedUpdate"] = {"imageDigest": "sha256:ccc"}
         check("nor the one already downloaded", up.waiting_update(staged), None)
         check("the last line of output", up.last_line("a\n\n  b  \n"), "b")
+        found = up.check_answer("Update available for: x\n  Version: 0.1.0\n  Digest: sha256:ddd\n", host())
+        check("an update bootc prints is found, with no cachedUpdate recorded",
+              (found or {}).get("digest"), "sha256:ddd")
+        check("No changes is nothing new", up.check_answer("No changes in: x\n", host()), None)
+        check("an update already downloaded is not new again",
+              up.check_answer("Update available for: x\n  Digest: sha256:ccc\n",
+                              host(staged="sha256:ccc")), None)
+        check("output that says neither still lets the download find out",
+              up.check_answer("something unexpected\n", host()), {})
 
         def broken():
             raise KeyError("imageDigest")
@@ -151,9 +160,15 @@ args = sys.argv[1:]
 if args[:1] == ["status"]:
     print(json.dumps(h))
 elif args == ["upgrade", "--check"]:
-    h["status"]["booted"]["cachedUpdate"] = {{"image": {{"image": "x"}},
-        "imageDigest": "sha256:new", "timestamp": "2026-09-29T01:00:00Z"}}
-    state.write_text(json.dumps(h)); print("Update available")
+    # As on a television installed from USB and pointed at the published
+    # image: bootc prints its answer and records no cachedUpdate.
+    staged = (h["status"].get("staged") or {{}}).get("image", {{}}).get("imageDigest")
+    if staged == "sha256:new":
+        print("No changes in: ostree-unverified-registry:x")
+    else:
+        print("Update available for: ostree-unverified-registry:x")
+        print("  Version: 0.1.0")
+        print("  Digest: sha256:new")
 elif args == ["upgrade"]:
     for n in (1, 2, 3):
         print(f"Fetching layer {{n}}/3", flush=True)
