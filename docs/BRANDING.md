@@ -34,8 +34,8 @@ Changing `ID` outright will break package installs.
 NAME="FreeTVOS"
 ID=freetvos
 ID_LIKE="fedora"
-VERSION_ID=0.1.0
-PRETTY_NAME="FreeTVOS 0.1.0"
+VERSION_ID=0.2.0
+PRETTY_NAME="FreeTVOS 0.2.0"
 LOGO=freetvos
 HOME_URL="..."
 VARIANT="Television"

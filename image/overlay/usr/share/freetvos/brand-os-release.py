@@ -15,7 +15,7 @@ from pathlib import Path
 TARGET = Path("/usr/lib/os-release")
 
 NAME = os.environ.get("BRAND_NAME", "FreeTVOS")
-VERSION = os.environ.get("BRAND_VERSION", "0.1.0")
+VERSION = os.environ.get("BRAND_VERSION", "0.2.0")
 ID = os.environ.get("BRAND_ID", "freetvos")
 
 

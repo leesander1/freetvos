@@ -26,7 +26,7 @@ def _auth_header(client_id: str, token: str = "") -> str:
         'MediaBrowser Client="FreeTVOS"',
         'Device="Television"',
         f'DeviceId="{client_id}"',
-        'Version="0.1.0"',
+        'Version="0.2.0"',
     ]
     if token:
         parts.append(f'Token="{token}"')

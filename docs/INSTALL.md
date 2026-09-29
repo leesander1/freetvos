@@ -99,7 +99,7 @@ Then install. Replace `/dev/nvme0n1` with the disk you just identified:
 sudo podman run --rm --privileged --pid=host \
   --security-opt label=type:unconfined_t \
   -v /dev:/dev -v /var/lib/containers:/var/lib/containers \
-  localhost/freetvos:0.1.0-amd64 \
+  localhost/freetvos:0.2.0-amd64 \
   bootc install to-disk --wipe /dev/nvme0n1
 ```
 

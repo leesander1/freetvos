@@ -27,7 +27,7 @@ def _headers(client_id: str, token: str = "") -> dict:
     head = {
         "Accept": "application/json",
         "X-Plex-Product": "FreeTVOS",
-        "X-Plex-Version": "0.1.0",
+        "X-Plex-Version": "0.2.0",
         "X-Plex-Client-Identifier": client_id,
         "X-Plex-Platform": "Linux",
         "X-Plex-Device": "FreeTVOS",
