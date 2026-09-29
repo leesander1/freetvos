@@ -108,6 +108,29 @@ there is no motion to measure the wait against.
 Set in the look-and-feel package's `defaults` file. See `ASSETS.md` §3 for
 sizes and the caution about contrast behind the focus ring.
 
+## Colours: the FreeTVOS scheme
+
+`/usr/share/color-schemes/FreeTVOS.colors` is Breeze Dark with every colour
+swapped for the brand palette FreeTVOS's own pages use: `#0B0E14` background,
+`#151A23` surfaces, `#E6EAF2` text, and `#3DDC97` for every highlight, focus and
+hover in place of Breeze's blue. The frame around the selected app tile, the
+focused row in Bigscreen's settings and every KDE dialog take their colours
+from it.
+
+Plasma reads colours from three places, and each once kept Breeze blue, so the
+build (`tune-shell-defaults.py`) fills all three from the one file:
+
+| Where | Why it matters |
+|---|---|
+| `/etc/xdg/kdeglobals` | The system default; the scheme's colours are merged in, since the `ColorScheme` key alone is only a label |
+| Bigscreen's look-and-feel `defaults` | Names a scheme that Plasma copies into `kdedefaults`, which outranks `/etc/xdg`; it named Breeze Dark |
+| The breeze-dark Plasma theme's `colors` | The shell draws with the Plasma theme, which carries its own colours rather than following the system |
+
+Writing on a selected row is dark, because white on `#3DDC97` is not legible.
+A filled highlight elsewhere needs no entry: KDE tints the background with the
+accent, which comes out `#0F3023`, and white reads on that. `tools/test-theme.py`
+checks all of it.
+
 ## 6. Removing rather than rebranding
 
 Two things are better deleted than restyled.

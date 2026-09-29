@@ -70,7 +70,9 @@ def pin_wallpaper() -> bool:
     return True
 
 
-COLOR_SCHEME = Path("/usr/share/color-schemes/BreezeDark.colors")
+# FreeTVOS's own scheme: Breeze Dark in the brand palette. See the file.
+COLOR_SCHEME = Path("/usr/share/color-schemes/FreeTVOS.colors")
+PLASMA_DARK_COLORS = Path("/usr/share/plasma/desktoptheme/breeze-dark/colors")
 SYSTEM_KDEGLOBALS = Path("/etc/xdg/kdeglobals")
 
 
@@ -89,7 +91,7 @@ def darken_shell() -> bool:
     which is what a user picking the scheme by hand would have produced.
     """
     if not COLOR_SCHEME.exists():
-        print("  skip dark scheme: BreezeDark.colors missing")
+        print("  skip dark scheme: FreeTVOS.colors missing")
         return False
     if not SYSTEM_KDEGLOBALS.exists():
         print("  skip dark scheme: /etc/xdg/kdeglobals missing")
@@ -111,7 +113,7 @@ def darken_shell() -> bool:
 
     SYSTEM_KDEGLOBALS.write_text(
         existing.rstrip("\n") + "\n\n" + "\n".join(wanted) + "\n")
-    print(f"  merged {len(wanted)} lines of BreezeDark into /etc/xdg/kdeglobals")
+    print(f"  merged {len(wanted)} lines of FreeTVOS colours into /etc/xdg/kdeglobals")
     return True
 
 
@@ -134,6 +136,13 @@ def darken_plasma_theme() -> bool:
         print("  skip plasma theme: look-and-feel defaults missing")
         return False
     text = BIGSCREEN_DEFAULTS.read_text()
+    # Bigscreen's look-and-feel names Breeze Dark as the scheme, and Plasma
+    # copies that into kdedefaults, which outranks /etc/xdg: the same trap the
+    # splash screen fell into. Name FreeTVOS's instead.
+    if "ColorScheme=BreezeDark" in text:
+        text = text.replace("ColorScheme=BreezeDark", "ColorScheme=FreeTVOS")
+        BIGSCREEN_DEFAULTS.write_text(text)
+        print("  look-and-feel colour scheme set to FreeTVOS")
     if "name=breeze-dark" in text:
         print("  plasma theme already dark")
         return True
@@ -147,11 +156,29 @@ def darken_plasma_theme() -> bool:
     return True
 
 
+def colour_plasma_theme() -> bool:
+    """Give the dark Plasma theme FreeTVOS's colours.
+
+    The shell itself, the home screen and its panels, draws with the Plasma
+    theme, and breeze-dark carries its own colours file rather than following
+    the system scheme, so without this the home screen kept Breeze's greys and
+    blue whatever kdeglobals said. The theme's drawings stay; only the colours
+    they are filled with change.
+    """
+    if not PLASMA_DARK_COLORS.exists() or not COLOR_SCHEME.exists():
+        print("  skip plasma theme colours: breeze-dark or FreeTVOS.colors missing")
+        return False
+    PLASMA_DARK_COLORS.write_text(COLOR_SCHEME.read_text())
+    print("  breeze-dark plasma theme recoloured with FreeTVOS colours")
+    return True
+
+
 def main() -> int:
     set_bool_default(HOMESCREEN, "coloredTiles", "false")
     pin_wallpaper()
     darken_shell()
     darken_plasma_theme()
+    colour_plasma_theme()
     return 0
 
 
