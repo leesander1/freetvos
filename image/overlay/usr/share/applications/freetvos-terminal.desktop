@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Terminal
+Comment=Run commands on this television, with sudo; needs a keyboard
+Exec=/usr/bin/freetvos-terminal
+Icon=freetvos-terminal
+Categories=System;TerminalEmulator;
+Terminal=false
+StartupNotify=true
+X-KDE-FormFactor=tv

@@ -46,8 +46,8 @@ and `python3 tools/showcase.py demo` take them again.
 | **Meetings.** Zoom, Meet and Teams, joined by meeting ID and passcode with the remote. USB camera support. | **Pin to the home screen.** The favourites key, or P, over whatever is playing puts it on the home screen with its poster. |
 | ![The Updates page](docs/images/updates.png) | ![Bigscreen's settings in the FreeTVOS colours](docs/images/bigscreen-settings.png) |
 | **Updates.** New versions download by themselves and finish overnight, never while something is playing; one switch turns that off. (Shown with an update waiting.) | **One theme throughout.** Bigscreen's own settings and every KDE dialog in the same colours as FreeTVOS's pages. |
-| ![The playback check](docs/images/playcheck.png) | |
-| **Check video playback.** Everything a streaming service asks the browser before it plays, on one screen, so a photo is enough to tell why one refuses. | |
+| ![The playback check](docs/images/playcheck.png) | ![The terminal](docs/images/terminal.png) |
+| **Check video playback.** Everything a streaming service asks the browser before it plays, on one screen, so a photo is enough to tell why one refuses. | **Terminal.** Konsole full screen in type you can read from the sofa, with sudo, for when something needs a command. |
 
 ## Why it is built this way
 
@@ -105,6 +105,7 @@ ssh -p 2222 tv@localhost
 | `docs/RESOURCES.md` | How much memory and CPU it uses, and how much RAM a box needs |
 | `docs/INSTALL.md` | Getting it onto real x86_64 hardware |
 | `docs/UPDATES.md` | Automatic updates, the switch for them, and going back |
+| `docs/TERMINAL.md` | The Terminal tile, sudo, and letting someone in over ssh |
 
 ## First run
 

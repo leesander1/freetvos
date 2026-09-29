@@ -1,0 +1,8 @@
+# The television's own account runs anything as root, with no password.
+#
+# Chosen deliberately: the Terminal tile, and ssh with a key, are how fixes get
+# made on a television nobody logs into, and the account has no password to
+# type. The cost is real and stated in docs/TERMINAL.md: anything that runs as
+# this account, a bug in a service it runs or someone with a keyboard, can
+# become root. Delete this file to take the rights away.
+tv ALL=(ALL) NOPASSWD: ALL

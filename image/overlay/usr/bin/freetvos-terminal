@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+"""Open the Terminal tile: Konsole full screen, with no toolbars.
+
+Konsole keeps whether its toolbars show inside Qt's saved window state, in
+~/.local/state/konsolestaterc, and restores that on every launch, so the
+Hidden default in /etc/xdg/konsolerc only ever applied to a first start. Its
+toolbars are buttons for a pointer (New Tab, Split View, Copy, Paste), which a
+television has no use for. So each launch writes a state with both marked
+hidden before starting Konsole: Qt's format stores each toolbar as its name
+then a "shown" byte, and this is the state Konsole itself saved with those
+bytes cleared.
+"""
+import os
+import sys
+from pathlib import Path
+
+STATE = ("AAAA/wAAAAD9AAAAAQAAAAAAAAAAAAAAAPwCAAAAAvsAAAAiAFEAdQBpAGMAawBDAG8AbQBtAGEA"
+         "bgBkAHMARABvAGMAawAAAAAA/////wAAAY4A////+wAAABwAUwBTAEgATQBhAG4AYQBnAGUAcgBE"
+         "AG8AYwBrAAAAAAD/////AAABMQD///8AAAeAAAAEBgAAAAQAAAAEAAAACAAAAAj8AAAAAQAAAAIA"
+         "AAACAAAAFgBtAGEAaQBuAFQAbwBvAGwAQgBhAHIAAAAAAP////8AAAAAAAAAAAAAABwAcwBlAHMA"
+         "cwBpAG8AbgBUAG8AbwBsAGIAYQByAAAAASL/////AAAAAAAAAAA=")
+KONSOLE = ["konsole", "--fullscreen", "--hide-menubar", "--hide-tabbar",
+           "--notransparency", "--profile", "FreeTVOS"]
+
+
+def with_state(text: str) -> str:
+    """The state file with [MainWindow] State= set, the rest left alone.
+
+    Edited line by line rather than with configparser, which would take the
+    colons in Konsole's own keys ("1920x1080 screen: Width") for separators.
+    """
+    lines = text.splitlines()
+    out, in_group, done = [], False, False
+    for line in lines:
+        if line.startswith("["):
+            if in_group and not done:
+                out.append(f"State={STATE}")
+                done = True
+            in_group = line.strip() == "[MainWindow]"
+        elif in_group and line.startswith("State="):
+            if not done:
+                out.append(f"State={STATE}")
+                done = True
+            continue
+        out.append(line)
+    if in_group and not done:
+        out.append(f"State={STATE}")
+        done = True
+    if not done:
+        out += ["", "[MainWindow]", f"State={STATE}"]
+    return "\n".join(out).lstrip("\n") + "\n"
+
+
+def main() -> int:
+    state_home = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state")
+    path = state_home / "konsolestaterc"
+    try:
+        current = path.read_text()
+    except OSError:
+        current = ""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(with_state(current))
+    except OSError:
+        pass  # toolbars showing is no reason not to open the terminal
+    if "--print-state" in sys.argv:
+        print(path.read_text(), end="")
+        return 0
+    os.execvp(KONSOLE[0], KONSOLE)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

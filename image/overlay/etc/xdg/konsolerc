@@ -1,0 +1,14 @@
+# The Terminal tile's Konsole: no toolbars. New Tab, Split View, Copy and
+# Paste are buttons for a pointer, and a television has none; the keys still
+# work. The FreeTVOS profile is the default, so a new window matches too.
+[Desktop Entry]
+DefaultProfile=FreeTVOS.profile
+
+[KonsoleWindow]
+ShowMenuBarByDefault=false
+
+[MainWindow][Toolbar mainToolBar]
+Hidden=true
+
+[MainWindow][Toolbar sessionToolbar]
+Hidden=true

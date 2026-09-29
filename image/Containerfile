@@ -175,6 +175,7 @@ RUN dnf install -y --setopt=install_weak_deps=False \
       glibc-langpack-en \
       squashfs-tools \
       flatpak \
+      konsole \
  && dnf clean all
 
 # Fail the build rather than ship a Chromium that cannot start, or cannot play
@@ -258,7 +259,7 @@ RUN chmod 0755 /usr/bin/freetvos-webapp /usr/bin/freetvos-firstboot \
               /usr/bin/freetvos-livetv /usr/bin/freetvos-livetv-player \
               /usr/bin/freetvos-meet /usr/bin/freetvos-tuner \
               /usr/bin/freetvos-pin-host /usr/bin/freetvos-update \
-              /usr/bin/freetvos-timezone \
+              /usr/bin/freetvos-timezone /usr/bin/freetvos-terminal \
               /usr/lib/NetworkManager/dispatcher.d/90-freetvos-timezone \
  && python3 /usr/share/freetvos/generate-desktop-entries.py \
  && python3 /usr/share/freetvos/curate-apps.py \
@@ -306,6 +307,11 @@ RUN if [ "$BUNDLE_WIDEVINE" = "yes" ]; then \
     else \
       echo "Widevine will be fetched on the device"; \
     fi
+
+# The Terminal tile's sudo rule: no password, by choice (see the file and
+# docs/TERMINAL.md). sudo refuses a rule file anyone else can write, and
+# visudo fails the build on one it cannot read.
+RUN chmod 0440 /etc/sudoers.d/freetvos && visudo -cf /etc/sudoers.d/freetvos
 
 RUN systemctl enable sddm avahi-daemon bluetooth NetworkManager sshd \
       NetworkManager-dispatcher \
