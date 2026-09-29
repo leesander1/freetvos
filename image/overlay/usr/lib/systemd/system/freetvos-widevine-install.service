@@ -1,9 +1,10 @@
 [Unit]
 Description=Fetch the Widevine module
 Documentation=man:freetvos-widevine-install(1)
-# Skip entirely once it is installed. /var survives image updates, so this runs
+# Skip entirely once it is installed and its manifest checked (.verified).
+# /var survives image updates, so this runs
 # once in the life of the device rather than once per boot.
-ConditionPathExists=!/var/lib/freetvos/widevine/libwidevinecdm.so
+ConditionPathExists=!/var/lib/freetvos/widevine/.verified
 After=network-online.target
 Wants=network-online.target
 

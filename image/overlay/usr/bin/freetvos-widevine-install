@@ -39,14 +39,41 @@ if [ "$AUTO" = "1" ]; then
     || { echo "no network yet; will retry"; exit 0; }
 fi
 
+# Whether a manifest is Widevine's own. Chromium learns from it which formats
+# the module decrypts ("x-cdm-codecs") and which interface it speaks; with any
+# other manifest the module is refused or offers no formats at all, which is
+# YouTube TV's "This format is not supported". Installs before this check took
+# MEIPreload's manifest from Chrome's package by mistake, so a module that is
+# present is only counted as installed when its manifest passes too, and one
+# that does not is fetched again.
+manifest_ok() {
+  python3 - "$1" <<'PY' 2>/dev/null
+import json, sys
+m = json.load(open(sys.argv[1]))
+sys.exit(0 if m.get("name") == "WidevineCdm" and m.get("x-cdm-codecs") else 1)
+PY
+}
+
+# The units skip this once it is marked done, so a working install costs
+# nothing at boot. Marked in CDM_ROOT, which is where the units look.
+mark_done() { : > "$CDM_ROOT/.verified" 2>/dev/null || true; }
+
 # Ask the question Chromium asks, following the symlink, so a module baked
 # into the image counts as installed and this does not download it again.
 if find -L /opt/google/chrome/WidevineCdm -name libwidevinecdm.so -size +1k \
-     2>/dev/null | grep -q . ; then
+     2>/dev/null | grep -q . \
+   && manifest_ok /opt/google/chrome/WidevineCdm/manifest.json; then
   echo "already installed"
+  mark_done
   exit 0
 fi
-[ -f "$CDM_ROOT/libwidevinecdm.so" ] && { echo "already installed"; exit 0; }
+if [ -f "$CDM_ROOT/libwidevinecdm.so" ] && manifest_ok "$CDM_ROOT/manifest.json"; then
+  echo "already installed"
+  mark_done
+  exit 0
+fi
+[ -f "$CDM_ROOT/libwidevinecdm.so" ] \
+  && echo "The Widevine module's manifest is not Widevine's; fetching it again."
 
 [ "$(id -u)" -eq 0 ] || die "Run this with sudo: sudo freetvos-widevine-install"
 
@@ -64,11 +91,13 @@ case "$ARCH" in
     # ar, bsdtar nor dpkg-deb, so this path would have failed outright, and
     # installing binutils would put a toolchain on every television for one
     # optional step.
-    python3 /usr/share/freetvos/widevine/extract-deb.py \
-      "$TMP/chrome.deb" libwidevinecdm.so "$TMP/cdm" >/dev/null \
+    # By path, not by name: Chrome's package has three manifest.json files.
+    python3 /usr/share/freetvos/widevine/extract-deb.py "$TMP/chrome.deb" \
+      WidevineCdm/_platform_specific/linux_x64/libwidevinecdm.so "$TMP/cdm" >/dev/null \
       || die "No CDM found inside the Chrome package."
-    python3 /usr/share/freetvos/widevine/extract-deb.py \
-      "$TMP/chrome.deb" manifest.json "$TMP/cdm" >/dev/null 2>&1 || true
+    python3 /usr/share/freetvos/widevine/extract-deb.py "$TMP/chrome.deb" \
+      WidevineCdm/manifest.json "$TMP/cdm" >/dev/null \
+      || die "No Widevine manifest inside the Chrome package."
 
     SRC="$TMP/cdm/libwidevinecdm.so"
     [ -f "$SRC" ] || die "No CDM found inside the Chrome package."
@@ -160,6 +189,11 @@ case "$ARCH" in
     ;;
 esac
 
+# Never install a module Chromium will be told nothing about.
+if [ -n "${MANIFEST:-}" ]; then
+  manifest_ok "$MANIFEST" || die "The manifest found is not Widevine's; not installing."
+fi
+
 echo "Installing to $CDM_ROOT..."
 install -d -m 0755 "$CDM_ROOT"
 install -p -m 0644 "$SRC" "$CDM_ROOT/libwidevinecdm.so"
@@ -181,6 +215,8 @@ if [ "$PLATFORM_DIR" = "linux_arm64" ]; then
   install -d -m 0755 "$CDM_ROOT/WidevineCdm/_platform_specific/linux_x64"
   : > "$CDM_ROOT/WidevineCdm/_platform_specific/linux_x64/libwidevinecdm.so"
 fi
+
+mark_done
 
 echo
 echo "Widevine installed. Netflix, Prime Video, Disney+, Hulu, Paramount+,"

@@ -2,7 +2,7 @@
 Description=Retry fetching the Widevine module
 # Same condition as the service: once the module is there, the timer has
 # nothing left to do.
-ConditionPathExists=!/var/lib/freetvos/widevine/libwidevinecdm.so
+ConditionPathExists=!/var/lib/freetvos/widevine/.verified
 
 [Timer]
 # First boot usually has no network yet: the viewer is still choosing a wifi

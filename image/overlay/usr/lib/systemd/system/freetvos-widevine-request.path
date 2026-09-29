@@ -1,7 +1,7 @@
 [Unit]
 Description=Watch for a service asking for Widevine
 # Same condition as the install: nothing to ask for once it is there.
-ConditionPathExists=!/var/lib/freetvos/widevine/libwidevinecdm.so
+ConditionPathExists=!/var/lib/freetvos/widevine/.verified
 
 [Path]
 # Opening a Widevine service without the module leaves this file, so the

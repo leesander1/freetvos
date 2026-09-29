@@ -31,6 +31,23 @@ def ar_members(path: Path):
             yield name.rstrip("/"), data
 
 
+def matches(member: str, wanted: str) -> bool:
+    """Whether a file in the package is the one asked for.
+
+    A name with a slash in it, WidevineCdm/manifest.json, must match whole
+    trailing path components. A bare name must match the file name exactly.
+    Chrome's package holds three files called manifest.json, and asking for
+    that name alone took the first, MEIPreload's: Chromium was then told
+    nothing about which formats the Widevine module decrypts, and YouTube TV
+    said "This format is not supported". Exact components, not endswith(),
+    because endswith() also matched a "._libwidevinecdm.so" resource-fork stub
+    in place of the library, which a test caught.
+    """
+    parts = Path(member).parts
+    want = Path(wanted).parts
+    return len(parts) >= len(want) and parts[-len(want):] == want
+
+
 def main() -> int:
     deb, wanted, outdir = Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3])
     outdir.mkdir(parents=True, exist_ok=True)
@@ -45,11 +62,7 @@ def main() -> int:
             # between .deb builds (xz today, zstd on some).
             with tarfile.open(tmp.name, "r:*") as tar:
                 for member in tar.getmembers():
-                    # Compare the basename exactly. endswith() also matches
-                    # anything merely ending in the same characters, which a
-                    # test caught: it happily picked up a "._libwidevinecdm.so"
-                    # resource-fork stub instead of the library.
-                    if member.isfile() and Path(member.name).name == wanted:
+                    if member.isfile() and matches(member.name, wanted):
                         target = outdir / Path(member.name).name
                         src = tar.extractfile(member)
                         if src is None:
