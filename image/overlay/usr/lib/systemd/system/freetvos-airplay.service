@@ -14,12 +14,15 @@ User=tv
 # find it over mDNS, but a dynamic port cannot be written into a firewall rule,
 # and this device is meant to sit on a home network behind one.
 #
-# waylandsink, not glimagesink. The shell is Wayland, so this hands buffers
-# straight to the compositor with no GL context of its own. glimagesink needs
-# working EGL and fails outright on hardware without acceleration, which is
-# exactly what a cheap TV box and a QEMU virtio-gpu both are. Override with
-# FREETVOS_VIDEO_SINK on hardware where GL is genuinely faster.
-Environment=FREETVOS_VIDEO_SINK=waylandsink
+# glimagesink, and -avdec below: the combination that drew a mirror correctly
+# on a real television (an AMD mini PC). waylandsink scrambled the picture into
+# smeared bands whichever decoder fed it, and with the hardware decoder that
+# decodebin picks by default the picture was scrambled too. Decoding in
+# software costs little for a mirror stream. glimagesink needs working GL, which
+# a QEMU virtio-gpu does not have; set FREETVOS_VIDEO_SINK=waylandsink in
+# /etc/freetvos/airplay.conf there. The mirror window is made full screen by
+# the FreeTVOS KWin script: -fs does not reach a GL window under Wayland.
+Environment=FREETVOS_VIDEO_SINK=glimagesink
 Environment=XDG_RUNTIME_DIR=/run/user/1000
 Environment=WAYLAND_DISPLAY=wayland-0
 EnvironmentFile=-/etc/freetvos/airplay.conf
@@ -34,7 +37,7 @@ EnvironmentFile=-/etc/freetvos/airplay.conf
 # Not -scrsv, which would keep the screensaver off during video: UxPlay 1.73.7
 # aborts at start with it ("basic_string: construction from null is not
 # valid"), with or without a session bus.
-ExecStart=/bin/sh -c 'exec /usr/bin/uxplay -n "FreeTVOS" -nh -p -hls \
+ExecStart=/bin/sh -c 'exec /usr/bin/uxplay -n "FreeTVOS" -nh -p -hls -avdec -fs \
   -vs "$FREETVOS_VIDEO_SINK" -as autoaudiosink'
 
 Restart=on-failure

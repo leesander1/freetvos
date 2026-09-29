@@ -49,7 +49,18 @@ function serviceWindows() {
  */
 workspace.windowAdded.connect(function (w) {
     if (w && w.normalWindow) workspace.activeWindow = w;
+    fillIfMirror(w);
 });
+
+/*
+ * AirPlay mirroring fills the screen. UxPlay's own full-screen switch never
+ * reaches the window with the GL video sink under Wayland, so a mirror opened
+ * as a 320x240 window in the top left corner of the television. It is the one
+ * window with the class "uxplay".
+ */
+function fillIfMirror(w) {
+    if (w && w.resourceClass === "uxplay" && !w.fullScreen) w.fullScreen = true;
+}
 
 function workArea() {
     return workspace.clientArea(KWin.MaximizeArea, workspace.activeScreen,

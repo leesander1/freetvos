@@ -277,6 +277,12 @@ def main() -> int:
     airplay = (REPO / "image/overlay/usr/lib/systemd/system/freetvos-airplay.service").read_text()
     check("AirPlay takes the YouTube app's video, not only its sound", " -hls " in airplay, True)
     check("and not -scrsv, which crashes UxPlay 1.73.7", "-scrsv" not in airplay.split("ExecStart=")[1], True)
+    check("the mirror is decoded in software and drawn with GL, which is what showed "
+          "a clean picture", (" -avdec " in airplay, "FREETVOS_VIDEO_SINK=glimagesink" in airplay),
+          (True, True))
+    kwin = (REPO / "image/overlay/usr/share/kwin/scripts/freetvos-split/contents/code/main.js").read_text()
+    check("and the mirror window is made full screen as it opens",
+          'w.resourceClass === "uxplay"' in kwin and "fillIfMirror(w);" in kwin, True)
 
     print()
     if failures:

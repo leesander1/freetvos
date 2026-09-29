@@ -48,6 +48,12 @@ AirPlay has two ways of sending video, and only some of it can work here:
 | The AirPlay button in the **YouTube** app | Works: UxPlay runs with `-hls`, which takes the video's address instead of the screen |
 | The AirPlay button in **Netflix, Disney+, Peacock, Max, Apple TV** | Sound only, no picture. These send FairPlay-protected video, which only Apple's own receivers and licensed televisions can play. Open the service's own tile on FreeTVOS instead. Mirroring those apps usually shows a black picture too, for the same reason |
 
+Mirroring is decoded in software and drawn with GL (`glimagesink`), which is
+what gave a clean picture on real hardware: the Wayland sink and the hardware
+decoder each scrambled it. The FreeTVOS KWin script makes the mirror window,
+class `uxplay`, full screen as it opens, since UxPlay's own `-fs` does not reach
+it under Wayland.
+
 The last row is the usual reason AirPlay looks broken: the television appears,
 accepts the connection and plays the sound, and the picture never comes.
 `journalctl -u freetvos-airplay` shows `isMedia=1` and `usingScreen=0` for
