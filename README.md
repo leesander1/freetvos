@@ -27,7 +27,7 @@ and `python3 tools/showcase.py demo` take them again.
 | | |
 |---|---|
 | ![The home screen](docs/images/home.png) | ![The first-run wizard](docs/images/setup.png) |
-| **Home.** Twelve streaming services and every feature, on Plasma Bigscreen. | **Setup Wizard.** Opens by itself the first time the television is turned on. |
+| **Home.** Twelve streaming services and every feature, on Plasma Bigscreen, in FreeTVOS's own colours. | **Setup Wizard.** Opens by itself the first time the television is turned on. |
 | ![Typing a wifi password on screen](docs/images/setup-keyboard.png) | ![The app catalogue](docs/images/apps.png) |
 | **Typing with a remote.** The page draws its own keyboard. The network names are stand-ins, as the VM has no radio. | **Customizable Apps/Services.** Nineteen more services a press away, including cloud gaming, or any site by its address. |
 | ![Live scores](docs/images/scores.png) | ![One game](docs/images/scores-game.png) |
@@ -35,7 +35,7 @@ and `python3 tools/showcase.py demo` take them again.
 | ![Your own media](docs/images/library.png) | ![External inputs](docs/images/inputs.png) |
 | **Library.** A USB drive, a Plex server or a Jellyfin server, and where you left off. | **Inputs/USB HDMI Device Passthrough.** A console or set-top box through a USB HDMI capture device. This is good for if you don't have a device with a way to plug device directly into the screen. |
 | ![Picture and sound settings](docs/images/picture-sound.png) | ![Choosing what goes in split view](docs/images/split-picker.png) |
-| **Picture & Sound.** Resolution, overscan, output, volume and Bluetooth, laid out for a remote. | **Split view.** Two services side by side, with the sound following the one in focus. |
+| **Picture & Sound.** Resolution, overscan, output, volume and Bluetooth, laid out for a remote, and a playback check for when a service will not play. | **Split view.** Two services side by side, with the sound following the one in focus. |
 | ![Stock, score and news bars on the home screen](docs/images/tickers-home.png) | ![The Tickers settings](docs/images/tickers.png) |
 | **Tickers.** Stock prices, live scores and your own headlines, stacked above whatever is playing. | **Each on its own schedule.** Always, while the market is open, while games are live, or at set hours. |
 | ![Choosing stocks for the ticker](docs/images/stock-picker.png) | ![Picture in picture](docs/images/pip.png) |
@@ -44,6 +44,10 @@ and `python3 tools/showcase.py demo` take them again.
 | **Live TV.** A programme guide from Tunarr, an HDHomeRun tuner or a playlist. Full support for USB tuner. The channels here are test patterns. | **Changing channel.** The number, what is on, and what is next. |
 | ![Joining a video call](docs/images/meetings.png) | ![Pinning a show to the home screen](docs/images/pin.png) |
 | **Meetings.** Zoom, Meet and Teams, joined by meeting ID and passcode with the remote. USB camera support. | **Pin to the home screen.** The favourites key, or P, over whatever is playing puts it on the home screen with its poster. |
+| ![The Updates page](docs/images/updates.png) | ![Bigscreen's settings in the FreeTVOS colours](docs/images/bigscreen-settings.png) |
+| **Updates.** New versions download by themselves and finish overnight, never while something is playing; one switch turns that off. (Shown with an update waiting.) | **One theme throughout.** Bigscreen's own settings and every KDE dialog in the same colours as FreeTVOS's pages. |
+| ![The playback check](docs/images/playcheck.png) | |
+| **Check video playback.** Everything a streaming service asks the browser before it plays, on one screen, so a photo is enough to tell why one refuses. | |
 
 ## Why it is built this way
 
