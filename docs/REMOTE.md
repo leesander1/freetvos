@@ -53,6 +53,29 @@ accepts the connection and plays the sound, and the picture never comes.
 `journalctl -u freetvos-airplay` shows `isMedia=1` and `usingScreen=0` for
 such a connection, and the name of what was playing.
 
+## 4. DLNA, for casting a video from a phone app
+
+`freetvos-dlna.service` is a DLNA/UPnP media renderer, listed as **FreeTVOS** in
+any app that casts to DLNA: Web Video Caster on iPhone, iPad and Android, which
+casts video from nearly any website; VLC, BubbleUPnP and many gallery and file
+apps on Android; and media servers. What it is sent plays full screen in mpv,
+and the phone's play, pause, seek and volume work as on any renderer. Back on
+the remote closes it, and the phone sees it stop.
+
+It is the widest of the ways to cast here, because it is an open standard
+rather than one company's. It cannot play DRM-protected video (Netflix,
+Disney+ and the like): those apps do not cast to DLNA at all.
+
+| Way to cast | Covers |
+|---|---|
+| DIAL (YouTube's cast button) | YouTube, which opens on the television and pairs with the phone |
+| AirPlay | Screen mirroring of anything that is not DRM-protected, and the YouTube app's video |
+| DLNA | Any video address a DLNA app sends: Web Video Caster, VLC, BubbleUPnP, media servers |
+| Chromecast | Not possible: every Cast app checks for a Google-signed device certificate |
+
+`cast/dlna/freetvos-dlna.py` is the whole of it, standard library only, driving
+mpv over its IPC socket. `tools/test-dlna.py` checks it as a sender would.
+
 ## Getting back out of an application
 
 Every service opens fullscreen without decoration, so there is no visible exit.

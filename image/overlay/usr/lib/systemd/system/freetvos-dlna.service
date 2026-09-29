@@ -1,0 +1,21 @@
+[Unit]
+Description=FreeTVOS DLNA renderer (cast a video from a phone app)
+Documentation=file:///usr/share/freetvos/dlna/freetvos-dlna.py
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# As the television account and into its session, like the DIAL receiver:
+# what it plays opens full screen in mpv on the television's own display.
+User=tv
+ExecStart=/usr/bin/python3 /usr/share/freetvos/dlna/freetvos-dlna.py
+Restart=on-failure
+RestartSec=5
+# Holds the renderer's identity, which senders remember it by.
+StateDirectory=freetvos
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=WAYLAND_DISPLAY=wayland-0
+
+[Install]
+WantedBy=graphical.target

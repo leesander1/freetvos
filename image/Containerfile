@@ -209,6 +209,7 @@ COPY image/overlay/ /
 COPY webapps/apps.d/ /usr/share/freetvos/webapps/
 COPY webapps/freetvos-webapp /usr/bin/freetvos-webapp
 COPY cast/dial/ /usr/share/freetvos/dial/
+COPY cast/dlna/ /usr/share/freetvos/dlna/
 
 # The ARM Widevine path needs an ELF patcher and squashfs tooling. Vendored
 # rather than fetched at install time, so the device is not downloading and
@@ -323,6 +324,7 @@ RUN systemctl enable sddm avahi-daemon bluetooth NetworkManager sshd \
  && systemctl --global enable freetvos-bars.service \
  && systemctl enable freetvos-tuner-boot.service \
  && systemctl enable freetvos-airplay.service freetvos-firstboot.service freetvos-dial.service \
+      freetvos-dlna.service \
  && systemctl set-default graphical.target \
  && if [ "$BUNDLE_WIDEVINE" != "yes" ]; then \
       systemctl enable freetvos-widevine-install.timer \

@@ -85,6 +85,7 @@ ssh -p 2222 tv@localhost
 | `webapps/apps.d/` | One file per streaming service |
 | `webapps/freetvos-webapp` | The shared launcher every service runs through |
 | `cast/dial/` | DIAL receiver, for phone-initiated launches |
+| `cast/dlna/` | DLNA renderer, for casting a video from a phone app |
 | `tools/` | Build, disk, run, screenshot |
 | `docs/ASSETS.md` | What artwork is needed, at what sizes |
 | `docs/asset-showcase.html` | Every brand asset, shown where it appears on the television |
@@ -235,10 +236,19 @@ knows the `_platform_specific/linux_x64` CDM path. It cannot load an ARM
 Widevine module at all. Chromium knows `linux_arm64`.
 
 **Chromecast receiving is not possible.** There is no legitimate open Cast
-receiver, and there will not be one. What is here instead is DIAL, the open
-protocol Cast was built on, which the YouTube and Netflix phone apps still
-speak: the phone discovers the TV and tells it which app to open. AirPlay is
-genuinely supported through UxPlay, including mirroring.
+receiver, and there will not be one: every Cast app checks for a Google-signed
+device certificate. What is here instead covers most of what casting is used
+for:
+
+- **DLNA**, the open standard for "play this video on that screen": FreeTVOS
+  appears in Web Video Caster, VLC, BubbleUPnP and other DLNA apps and plays
+  what they send full screen.
+- **DIAL**, the protocol Cast was built on, which YouTube's cast button still
+  speaks: YouTube opens on the television already paired with the phone.
+- **AirPlay** through UxPlay: screen mirroring, and the YouTube app's video.
+
+None of them can play DRM-protected video sent from a phone; the services'
+own tiles are for that. See `docs/REMOTE.md`.
 
 ## Known defects
 
@@ -249,25 +259,15 @@ has no vmnet backend to bridge with. Everything looks healthy from inside the
 guest, which is misleading: the KDE Connect daemon runs and listens on 1716
 and is simply undiscoverable. Real hardware is the only way to know.
 
-**The TV settings window is light, and the rest of the system is dark.** It is
-the right application now, key-navigable with large type, but it renders in a
-light palette no matter what. Its QML reads Kirigami.Theme rather than
-hardcoding colours, and the colour scheme, the Plasma theme and the QtQuick
-Controls style were all set dark and verified in config; it stays light anyway.
-Its own System page has a Global theme picker, which is the remaining thing to
-try. Every other Qt dialog on the device is dark.
-
 ## Not done yet
 
-- Real hardware. Raspberry Pi 5 needs bootloader work Fedora does not do yet.
+- Raspberry Pi. FreeTVOS runs on x86_64 PCs; the Pi 5 needs bootloader work
+  Fedora does not do yet.
 - Remote keys for split view. Its shortcuts are on Ctrl+Alt chords no remote
   sends, and Meta is taken by the home overlay.
-- The DIAL receiver answers discovery and returns valid app state, but has
-  never been driven by a real phone.
 - x86_64 disk images cannot be cross-built on Apple Silicon: the builder runs
-  podman inside itself and that fails under emulation. The container image
-  builds fine, so installation goes through `bootc install` on the target
-  instead. See `docs/INSTALL.md`.
+  podman inside itself and that fails under emulation. The GitHub build makes
+  the installer instead; see `docs/INSTALL.md`.
 - Remote keys for split view. The shortcuts are on Ctrl+Alt chords that no
   remote sends, and Meta is taken by the home overlay.
 - Real continue-watching from Plex and Jellyfin, which unlike the DRM services
