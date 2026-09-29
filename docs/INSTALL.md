@@ -35,9 +35,16 @@ runner, where none of the problems above exist. It runs on every push that
 changes the image, and can be started by hand from the repository's Actions
 tab.
 
-1. Open the latest **Installer ISO** run under Actions and download the
-   `freetvos-amd64-installer` artifact. It is a zip holding the ISO and its
-   SHA-256.
+1. Download the installer from the repository's
+   [latest release](https://github.com/leesander1/freetvos/releases/latest).
+   Every build makes one. The ISO comes in two parts, because GitHub will not
+   hold a release file over 2 GB; join them with
+   `cat freetvos-amd64-installer.iso.part0 freetvos-amd64-installer.iso.part1 > freetvos-amd64-installer.iso`
+   (on Windows, `copy /b` with the two parts joined by `+`), and compare
+   `shasum -a 256` of the result with `SHA256SUMS`. The same ISO, whole, is
+   also on each **Installer ISO** run under Actions as the
+   `freetvos-amd64-installer` artifact, for 14 days and to a signed-in GitHub
+   account.
 2. Write the ISO to a USB stick with Fedora Media Writer, choosing
    "Select .iso file". Anything on the stick is erased.
 3. Boot the target machine from the stick (F12 on a Framework). The install is

@@ -302,6 +302,12 @@ elif args == ["upgrade"]:
           < workflow.index("Publish the image for updates"), True)
     check("keeping the published image's layer plan, or none if it cannot be read",
           'rechunk --previous-build="$PREV" || rechunk' in workflow, True)
+    check("each build is released, after the installer and the image",
+          workflow.index("Publish the image for updates") < workflow.index("- name: Release")
+          and "contents: write" in workflow, True)
+    check("in parts under GitHub's 2 GB limit, with checksums",
+          'split -b 1900M' in workflow and "SHA256SUMS" in workflow, True)
+    check("and with a full history for the notes", "fetch-depth: 0" in workflow, True)
     check("and never with Widevine in it",
           workflow.index("Leave Widevine out") < workflow.index("Publish the image"), True)
     tile = (REPO / "image/overlay/usr/share/applications/freetvos-updates.desktop").read_text()

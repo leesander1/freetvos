@@ -36,7 +36,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write     # the release
   packages: write
 
 jobs:
@@ -44,7 +44,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     steps:
+      # Whole history and tags, so the release notes can list what changed
+      # since the previous release.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # The image is about 6 GB, and building the ISO holds several copies of
       # it at once. The runner's disk starts mostly full of toolchains this job
@@ -188,3 +192,62 @@ jobs:
             output/freetvos-amd64-installer.iso.sha256
           compression-level: 0
           retention-days: 14
+
+      # A release per build, so each version has a permanent download that
+      # needs no GitHub account; the artifact above needs one to download and
+      # is gone after 14 days. GitHub refuses release files over 2 GB and the
+      # installer is nearer 4, so it goes up in two parts with the way to join
+      # them in the notes. Earlier releases are kept.
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          . brand/brand.env
+          DAY="$(date -u +%Y-%m-%d)"
+          TAG="v${BRAND_VERSION}-$(date -u +%Y%m%d)-${GITHUB_SHA::7}"
+          PREV="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
+
+          cd output
+          ISO=freetvos-amd64-installer.iso
+          split -b 1900M -d -a 1 "$ISO" "$ISO.part"
+          sha256sum "$ISO" "$ISO".part* > SHA256SUMS
+          ls -lh "$ISO".part* SHA256SUMS
+
+          {
+            echo "FreeTVOS ${BRAND_VERSION} for x86_64 PCs, built ${DAY} from ${GITHUB_SHA::7}."
+            echo
+            echo "## Install"
+            echo
+            echo "Download both parts, join them into one ISO, write it to a USB stick with"
+            echo "Fedora Media Writer and boot from it. The install erases the machine's"
+            echo "NVMe drive; see [INSTALL.md](https://github.com/${GITHUB_REPOSITORY}/blob/main/docs/INSTALL.md)."
+            echo
+            echo "Mac or Linux:"
+            echo
+            echo '```'
+            echo "cat $ISO.part0 $ISO.part1 > $ISO"
+            echo "shasum -a 256 $ISO    # should match its line in SHA256SUMS"
+            echo '```'
+            echo
+            echo "Windows (Command Prompt):"
+            echo
+            echo '```'
+            echo "copy /b $ISO.part0 + $ISO.part1 $ISO"
+            echo '```'
+            echo
+            echo "A television already running FreeTVOS updates itself to this version;"
+            echo "see [UPDATES.md](https://github.com/${GITHUB_REPOSITORY}/blob/main/docs/UPDATES.md)."
+            echo
+            echo "## Changes"
+            echo
+            if [ -n "$PREV" ]; then
+              git log --no-merges --pretty='- %s' "$PREV..$GITHUB_SHA"
+            else
+              git log --no-merges --pretty='- %s' -20 "$GITHUB_SHA"
+            fi
+          } > notes.md
+
+          gh release create "$TAG" --target "$GITHUB_SHA" --latest \
+            --title "FreeTVOS ${BRAND_VERSION} (${DAY}, ${GITHUB_SHA::7})" \
+            --notes-file notes.md \
+            "$ISO".part* SHA256SUMS
