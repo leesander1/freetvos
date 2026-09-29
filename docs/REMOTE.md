@@ -39,6 +39,20 @@ and macOS AirPlay picker. This one genuinely mirrors the screen and streams
 audio, so it is the right choice for showing photos or anything with no TV app
 of its own.
 
+AirPlay has two ways of sending video, and only some of it can work here:
+
+| From the iPhone or iPad | On FreeTVOS |
+|---|---|
+| **Screen Mirroring** in Control Center | Works: the whole screen, with its sound |
+| Music, podcasts, anything sound-only | Works |
+| The AirPlay button in the **YouTube** app | Works: UxPlay runs with `-hls`, which takes the video's address instead of the screen |
+| The AirPlay button in **Netflix, Disney+, Peacock, Max, Apple TV** | Sound only, no picture. These send FairPlay-protected video, which only Apple's own receivers and licensed televisions can play. Open the service's own tile on FreeTVOS instead. Mirroring those apps usually shows a black picture too, for the same reason |
+
+The last row is the usual reason AirPlay looks broken: the television appears,
+accepts the connection and plays the sound, and the picture never comes.
+`journalctl -u freetvos-airplay` shows `isMedia=1` and `usingScreen=0` for
+such a connection, and the name of what was playing.
+
 ## Getting back out of an application
 
 Every service opens fullscreen without decoration, so there is no visible exit.

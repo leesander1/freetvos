@@ -259,6 +259,25 @@ def main() -> int:
     check("other services are unchanged on a PC",
           "CrOS aarch64" in agent(REPO / "webapps/apps.d/netflix.app", "x86_64"), True)
 
+    print("casting from a phone")
+    start = launcher.index('if [ -n "${FREETVOS_DIAL_QUERY:-}" ]; then')
+    end = launcher.index("\nfi\n", start) + 4
+    block = launcher[start:end]
+    def dial_url(url, query):
+        return subprocess.run(["bash", "-c", f'URL="$1"; FREETVOS_DIAL_QUERY="$2"\n{block}printf %s "$URL"',
+                               "_", url, query], capture_output=True, text=True).stdout
+    check("the phone's pairing code reaches YouTube's address",
+          dial_url("https://www.youtube.com/tv", "pairingCode=AB-12&theme=cl&dialLaunch=watch"),
+          "https://www.youtube.com/tv?pairingCode=AB-12&theme=cl&dialLaunch=watch")
+    check("after any query the address already has",
+          dial_url("https://www.netflix.com/browse?x=1", "?intent=play"),
+          "https://www.netflix.com/browse?x=1&intent=play")
+    check("and nothing changes without one", dial_url("https://www.youtube.com/tv", ""),
+          "https://www.youtube.com/tv")
+    airplay = (REPO / "image/overlay/usr/lib/systemd/system/freetvos-airplay.service").read_text()
+    check("AirPlay takes the YouTube app's video, not only its sound", " -hls " in airplay, True)
+    check("and not -scrsv, which crashes UxPlay 1.73.7", "-scrsv" not in airplay.split("ExecStart=")[1], True)
+
     print()
     if failures:
         print(f"{len(failures)} check(s) failed")

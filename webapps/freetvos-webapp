@@ -35,6 +35,17 @@ NAME=""; URL=""; DRM="no"; USER_AGENT=""; SPATIAL_NAV="no"; EXTENSIONS="yes"
 # shellcheck disable=SC1090
 . "$APP_FILE"
 [ -n "$URL_OVERRIDE" ] && URL="$URL_OVERRIDE"
+# A launch from a phone, through the DIAL receiver: the phone's pairing code
+# and what to play, which the service's TV page reads from its address. It was
+# once set by the receiver and read by nothing, so YouTube opened as if from
+# its tile, never paired, and the phone's video never played.
+if [ -n "${FREETVOS_DIAL_QUERY:-}" ]; then
+  DIAL_QUERY="${FREETVOS_DIAL_QUERY#\?}"
+  case "$URL" in
+    *\?*) URL="$URL&$DIAL_QUERY" ;;
+    *)    URL="$URL?$DIAL_QUERY" ;;
+  esac
+fi
 [ -n "$URL" ] || { echo "$APP_ID: no URL defined" >&2; exit 4; }
 
 # Per-app profile. Isolating them keeps one service's cookies, and one

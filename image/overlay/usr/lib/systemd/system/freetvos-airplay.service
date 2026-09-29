@@ -24,7 +24,17 @@ Environment=XDG_RUNTIME_DIR=/run/user/1000
 Environment=WAYLAND_DISPLAY=wayland-0
 EnvironmentFile=-/etc/freetvos/airplay.conf
 
-ExecStart=/bin/sh -c 'exec /usr/bin/uxplay -n "FreeTVOS" -nh -p \
+# -hls takes AirPlay's other mode, where an app hands over a video's address
+# rather than mirroring the screen: without it UxPlay accepted the connection,
+# played only the sound, and showed nothing. It covers the YouTube app. Apps
+# that send FairPlay-protected video (Netflix, Disney+, Peacock, Apple TV)
+# cannot be played by any receiver that is not Apple's or licensed by it; for
+# those, the service's own tile on the television is the way.
+#
+# Not -scrsv, which would keep the screensaver off during video: UxPlay 1.73.7
+# aborts at start with it ("basic_string: construction from null is not
+# valid"), with or without a session bus.
+ExecStart=/bin/sh -c 'exec /usr/bin/uxplay -n "FreeTVOS" -nh -p -hls \
   -vs "$FREETVOS_VIDEO_SINK" -as autoaudiosink'
 
 Restart=on-failure
