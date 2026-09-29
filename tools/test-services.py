@@ -277,6 +277,21 @@ def main() -> int:
     airplay = (REPO / "image/overlay/usr/lib/systemd/system/freetvos-airplay.service").read_text()
     check("AirPlay takes the YouTube app's video, not only its sound", " -hls " in airplay, True)
     check("and not -scrsv, which crashes UxPlay 1.73.7", "-scrsv" not in airplay.split("ExecStart=")[1], True)
+    containerfile = (REPO / "image/Containerfile").read_text()
+    patch = REPO / "image/patches/uxplay-play-direct.patch"
+    check("UxPlay is built with the patch that plays Plex's AirPlay video",
+          patch.is_file() and "patch -p1 < /tmp/uxplay-play-direct.patch" in containerfile
+          and "COPY --from=uxplay /uxplay /usr/bin/uxplay" in containerfile, True)
+    check("from source pinned by checksum",
+          re.search(r"UXPLAY_SHA256=[0-9a-f]{64}", containerfile) is not None
+          and "sha256sum -c -" in containerfile, True)
+    check("and the image checks the patched one is what it ships",
+          'grep -q "playing Content-Location directly" /usr/bin/uxplay' in containerfile, True)
+    check("the patch plays http and https addresses rather than refusing them",
+          '!strncmp(playback_location, "https://", 8)' in patch.read_text()
+          and "on_video_play(raop->callbacks.cls, playback_location" in patch.read_text(), True)
+    check("nor -fs, which crashes it when a video starts under Wayland",
+          " -fs" not in airplay.split("ExecStart=")[1], True)
     check("the mirror is decoded in software and drawn with GL, which is what showed "
           "a clean picture", (" -avdec " in airplay, "FREETVOS_VIDEO_SINK=glimagesink" in airplay),
           (True, True))

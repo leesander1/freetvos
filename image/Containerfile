@@ -14,6 +14,30 @@ FROM ${BASE_IMAGE} AS qmlruntime
 RUN dnf install -y --setopt=install_weak_deps=False qt6-qtdeclarative-devel \
  && dnf clean all
 
+# UxPlay, with FreeTVOS's patch for AirPlay video from Plex and other apps that
+# send an ordinary stream address (image/patches/uxplay-play-direct.patch).
+# Built from the release's source, pinned by checksum, against this image's own
+# libraries; the binary replaces the packaged one below, and the package stays
+# for its dependencies and files.
+FROM ${BASE_IMAGE} AS uxplay
+ARG UXPLAY_VERSION=1.73.7
+ARG UXPLAY_SHA256=65feb8732de666a7161a9e562aa603a7f5fe0ebb890c2a30c5e1a9c85c76309f
+COPY image/patches/uxplay-play-direct.patch /tmp/uxplay-play-direct.patch
+RUN dnf install -y --setopt=install_weak_deps=False cmake gcc-c++ make \
+      pkgconf-pkg-config patch libplist-devel openssl-devel \
+      avahi-compat-libdns_sd-devel gstreamer1-devel gstreamer1-plugins-base-devel \
+      libX11-devel \
+ && dnf clean all \
+ && curl -fsSL -o /tmp/uxplay.tar.gz \
+      "https://github.com/FDH2/UxPlay/archive/refs/tags/v${UXPLAY_VERSION}.tar.gz" \
+ && echo "${UXPLAY_SHA256}  /tmp/uxplay.tar.gz" | sha256sum -c - \
+ && tar xzf /tmp/uxplay.tar.gz -C /tmp \
+ && cd "/tmp/UxPlay-${UXPLAY_VERSION}" \
+ && patch -p1 < /tmp/uxplay-play-direct.patch \
+ && cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+ && cmake --build build -j"$(nproc)" \
+ && install -m 0755 build/uxplay /uxplay
+
 FROM ${BASE_IMAGE}
 
 ARG BRAND_ID=freetvos
@@ -239,6 +263,9 @@ COPY brand/png/wallpaper/ /usr/share/wallpapers/FreeTVOS/contents/images/
 COPY brand/logo/freetvos-wordmark.svg /usr/share/freetvos/brand/freetvos-wordmark.svg
 
 COPY --from=qmlruntime /usr/lib64/qt6/bin/qml /usr/lib64/qt6/bin/qml
+# The patched UxPlay in place of the packaged one; see the uxplay stage.
+COPY --from=uxplay /uxplay /usr/bin/uxplay
+RUN grep -q "playing Content-Location directly" /usr/bin/uxplay
 
 COPY tools/vendor/widevine_patch.py /usr/share/freetvos/widevine/widevine_patch.py
 COPY tools/vendor/LICENSE.pivine /usr/share/freetvos/widevine/LICENSE.pivine

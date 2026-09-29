@@ -245,7 +245,8 @@ for:
   what they send full screen.
 - **DIAL**, the protocol Cast was built on, which YouTube's cast button still
   speaks: YouTube opens on the television already paired with the phone.
-- **AirPlay** through UxPlay: screen mirroring, and the YouTube app's video.
+- **AirPlay** through UxPlay: screen mirroring, and video from YouTube, Plex and
+  other apps that send an ordinary stream.
 
 None of them can play DRM-protected video sent from a phone; the services'
 own tiles are for that. See `docs/REMOTE.md`.

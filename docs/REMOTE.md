@@ -46,6 +46,7 @@ AirPlay has two ways of sending video, and only some of it can work here:
 | **Screen Mirroring** in Control Center | Works: the whole screen, with its sound |
 | Music, podcasts, anything sound-only | Works |
 | The AirPlay button in the **YouTube** app | Works: UxPlay runs with `-hls`, which takes the video's address instead of the screen |
+| The AirPlay button in **Plex**, and other apps that send an ordinary stream | Works, with FreeTVOS's patch to UxPlay (below): the television fetches the stream itself and plays it from where the phone was, with the phone's scrub bar following |
 | The AirPlay button in **Netflix, Disney+, Peacock, Max, Apple TV** | Sound only, no picture. These send FairPlay-protected video, which only Apple's own receivers and licensed televisions can play. Open the service's own tile on FreeTVOS instead. Mirroring those apps usually shows a black picture too, for the same reason |
 
 Mirroring is decoded in software and drawn with GL (`glimagesink`), which is
@@ -53,6 +54,13 @@ what gave a clean picture on real hardware: the Wayland sink and the hardware
 decoder each scrambled it. The FreeTVOS KWin script makes the mirror window,
 class `uxplay`, full screen as it opens, since UxPlay's own `-fs` does not reach
 it under Wayland.
+
+UxPlay plays AirPlay video only in the form the YouTube app sends, and
+refused anything else, so Plex played sound and no picture. FreeTVOS builds
+UxPlay from its pinned source with `image/patches/uxplay-play-direct.patch`,
+which hands any ordinary `http(s)` address straight to UxPlay's own player
+instead. Plex sends an HLS playlist on your Plex server, which then transcodes
+it for the television: the first picture can take a few seconds to move.
 
 The last row is the usual reason AirPlay looks broken: the television appears,
 accepts the connection and plays the sound, and the picture never comes.
@@ -75,7 +83,7 @@ Disney+ and the like): those apps do not cast to DLNA at all.
 | Way to cast | Covers |
 |---|---|
 | DIAL (YouTube's cast button) | YouTube, which opens on the television and pairs with the phone |
-| AirPlay | Screen mirroring of anything that is not DRM-protected, and the YouTube app's video |
+| AirPlay | Screen mirroring of anything that is not DRM-protected, and video from YouTube, Plex and other apps that send an ordinary stream |
 | DLNA | Any video address a DLNA app sends: Web Video Caster, VLC, BubbleUPnP, media servers |
 | Chromecast | Not possible: every Cast app checks for a Google-signed device certificate |
 

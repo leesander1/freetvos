@@ -1,0 +1,40 @@
+UxPlay: play an ordinary http(s) AirPlay video address directly.
+
+UxPlay 1.73.7 plays AirPlay video only in the form the YouTube app sends,
+an address ending in /master.m3u8 that it fetches through the phone, and
+answered anything else with 400 "Could not find valid Plist Data". Plex,
+and other apps that AirPlay an ordinary stream, send an address the
+television can fetch itself (Plex: an HLS playlist on the Plex server).
+This hands such an address straight to UxPlay's own video player, from
+the position the phone gave, instead of refusing it.
+
+Checked on a real television: an episode AirPlayed from Plex on an iPad
+buffered, then played from where the iPad was, with its position and
+length reported back to the iPad.
+
+--- a/lib/http_handlers.h
++++ b/lib/http_handlers.h
+@@ -889,6 +889,23 @@
+ 
+     /* we only support HLS if the playback location is terminated by "/master.m3u8" */
+     const char *uri_suffix = strstr(playback_location, "/master.m3u8");
++    if (!uri_suffix && (!strncmp(playback_location, "http://", 7) ||
++                        !strncmp(playback_location, "https://", 8))) {
++        /* FreeTVOS: an address the television can fetch for itself. Plex, and
++           other apps that AirPlay an ordinary http(s) stream, send one; the
++           YouTube form above is fetched through the client instead. Play it
++           directly from where the client was, rather than refusing it. */
++        logger_log(raop->logger, LOGGER_INFO, "playing Content-Location directly (%s)",
++                   strncmp(playback_location, "https://", 8) ? "http" : "https");
++        set_playback_location(airplay_video, playback_location, strlen(playback_location));
++        raop->callbacks.on_video_play(raop->callbacks.cls, playback_location,
++                                      start_position_seconds);
++        plist_mem_free(playback_location);
++        if (req_root_node) {
++            plist_free(req_root_node);
++        }
++        return;
++    }
+     if (!uri_suffix) { 
+         logger_log(raop->logger, LOGGER_ERR, "Content-Location has unsupported form:\n%s\n", playback_location);	    
+         goto play_error;
