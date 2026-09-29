@@ -258,6 +258,8 @@ RUN chmod 0755 /usr/bin/freetvos-webapp /usr/bin/freetvos-firstboot \
               /usr/bin/freetvos-livetv /usr/bin/freetvos-livetv-player \
               /usr/bin/freetvos-meet /usr/bin/freetvos-tuner \
               /usr/bin/freetvos-pin-host /usr/bin/freetvos-update \
+              /usr/bin/freetvos-timezone \
+              /usr/lib/NetworkManager/dispatcher.d/90-freetvos-timezone \
  && python3 /usr/share/freetvos/generate-desktop-entries.py \
  && python3 /usr/share/freetvos/curate-apps.py \
  && python3 /usr/share/freetvos/brand-os-release.py \
@@ -306,6 +308,7 @@ RUN if [ "$BUNDLE_WIDEVINE" = "yes" ]; then \
     fi
 
 RUN systemctl enable sddm avahi-daemon bluetooth NetworkManager sshd \
+      NetworkManager-dispatcher \
  && systemctl enable freetvos-user-groups.service \
 
  && systemctl --global enable freetvos-cec-claim.service \

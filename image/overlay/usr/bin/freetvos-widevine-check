@@ -1,16 +1,62 @@
 #!/usr/bin/env bash
-# Show on the television whether Widevine actually works.
+# freetvos-widevine-check [service]
+#
+# Show on the television everything a streaming player asks before it plays:
+# Widevine at each level, each format protected and not, HDCP, the smooth-
+# playback query, and the browser identity the site is told. One photo of the
+# screen is then enough to tell why a service says a format is not supported.
+#
+# Opened inside a service's own browser setup, YouTube TV's by default, through
+# freetvos-webapp with an address override: the same profile, identity and
+# Widevine wiring the service gets, since that is what it sees. Picture & Sound
+# has a row that runs this.
 #
 # Served over http://localhost rather than opened as a file:// URL. EME is
 # refused on opaque origins, and a file:// page is one, so a local file test
 # reports a failure that has nothing to do with the CDM.
 set -euo pipefail
 
+SERVICE="${1:-youtubetv}"
 PORT="${FREETVOS_CHECK_PORT:-8099}"
 DOCROOT="$(mktemp -d)"
 trap 'rm -rf "$DOCROOT"' EXIT
 
-cp /usr/share/freetvos/widevine/emecheck.html "$DOCROOT/index.html"
+# What only the television knows, handed to the page as JSON.
+FACTS="$(SERVICE="$SERVICE" python3 - <<'EOF'
+import json, os, subprocess
+from pathlib import Path
+
+def rpm(name):
+    done = subprocess.run(["rpm", "-q", "--qf", "%{VERSION}", name],
+                          capture_output=True, text=True)
+    return done.stdout.strip() if done.returncode == 0 else "not installed"
+
+facts = {}
+try:
+    release = dict(line.split("=", 1) for line in
+                   Path("/etc/os-release").read_text().splitlines() if "=" in line)
+    facts["System"] = release.get("PRETTY_NAME", "?").strip('"')
+except OSError:
+    pass
+facts["Service tested"] = os.environ["SERVICE"]
+facts["Chromium"] = rpm("chromium")
+facts["ffmpeg (RPM Fusion, full)"] = rpm("ffmpeg-libs")
+facts["ffmpeg (Fedora, cut-down)"] = rpm("libavcodec-free")
+cdm = Path("/opt/google/chrome/WidevineCdm")
+try:
+    facts["Widevine module"] = json.loads((cdm / "manifest.json").read_text()).get("version", "?")
+except (OSError, ValueError):
+    facts["Widevine module"] = "missing"
+facts["Processor"] = os.uname().machine
+print(json.dumps(facts))
+EOF
+)"
+
+python3 - "$FACTS" > "$DOCROOT/index.html" <<'EOF'
+import sys
+page = open("/usr/share/freetvos/widevine/playcheck.html").read()
+print(page.replace("__FACTS__", sys.argv[1]), end="")
+EOF
 chmod -R 0755 "$DOCROOT"
 
 python3 -m http.server "$PORT" --bind 127.0.0.1 --directory "$DOCROOT" >/dev/null 2>&1 &
@@ -18,9 +64,4 @@ SRV=$!
 trap 'kill "$SRV" 2>/dev/null; rm -rf "$DOCROOT"' EXIT
 sleep 1
 
-/usr/bin/chromium-browser \
-  --ozone-platform=wayland \
-  --start-fullscreen \
-  --no-first-run \
-  --user-data-dir="${XDG_DATA_HOME:-$HOME/.local/share}/freetvos/webapps/_check" \
-  --app="http://localhost:$PORT/"
+/usr/bin/freetvos-webapp "$SERVICE" "http://localhost:$PORT/"

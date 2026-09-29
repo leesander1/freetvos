@@ -1,0 +1,165 @@
+<!doctype html><meta charset="utf-8"><title>Playback check</title>
+<!--
+  Everything a streaming player asks the browser before it plays, on one
+  screen, so that "This format is not supported" can be traced to a cause from
+  a photo of the television. Opened by freetvos-widevine-check inside a
+  service's own browser setup (its profile, its browser identity, its Widevine
+  wiring), because that is what the service sees; a check in a plain browser
+  can pass while the service still fails.
+
+  Served over http://localhost: EME is refused on a file:// page.
+-->
+<style>
+ :root{--bg:#0B0E14;--fg:#E6EAF2;--dim:#8C97AB;--ok:#3DDC97;--bad:#FF6B6B;--surface:#151A23}
+ html,body{background:var(--bg);color:var(--fg);margin:0}
+ body{font:20px/1.35 "Noto Sans",system-ui,sans-serif;padding:3vh 3vw}
+ h1{font-size:40px;margin:0 0 4px}
+ .sub{color:var(--dim);margin:0 0 18px}
+ .grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px}
+ section{background:var(--surface);border-radius:14px;padding:14px 18px}
+ h2{font-size:22px;margin:0 0 8px;color:var(--dim);font-weight:600}
+ table{border-collapse:collapse;width:100%}
+ td{padding:2px 0;vertical-align:top}
+ td.v{text-align:right;white-space:nowrap;padding-left:12px}
+ .ok{color:var(--ok)} .bad{color:var(--bad)} .dim{color:var(--dim)}
+ .wide{grid-column:1 / -1}
+ .mono{font-family:"Noto Sans Mono",monospace;font-size:16px;word-break:break-all}
+</style>
+<h1>Playback check</h1>
+<p class="sub" id="sub">Testing&hellip; Back closes this page.</p>
+<div class="grid">
+  <section><h2>Widevine</h2><table id="drm"></table></section>
+  <section><h2>Protected video and sound</h2><table id="enc"></table></section>
+  <section><h2>Unprotected video and sound</h2><table id="mse"></table></section>
+  <section><h2>Output protection (HDCP)</h2><table id="hdcp"></table></section>
+  <section><h2>Smooth playback, as YouTube asks</h2><table id="cap"></table></section>
+  <section><h2>This television</h2><table id="sys"></table></section>
+  <section class="wide"><h2>What the site is told</h2><div class="mono" id="ua"></div></section>
+</div>
+<script>
+const FACTS = __FACTS__;
+const KS = 'com.widevine.alpha';
+const $ = id => document.getElementById(id);
+function row(table, label, value, good) {
+  const tr = document.createElement('tr');
+  const cls = good === undefined ? '' : (good ? 'ok' : 'bad');
+  tr.innerHTML = '<td></td><td class="v ' + cls + '"></td>';
+  tr.children[0].textContent = label;
+  tr.children[1].textContent = value;
+  $(table).appendChild(tr);
+}
+const yes = b => b ? 'yes' : 'no';
+
+// What players ask for, most to least common. The avc1 High profiles are what
+// live TV is; YouTube's own videos are mostly VP9 and AV1.
+const VIDEO = [
+  ['H.264 baseline', 'video/mp4; codecs="avc1.42E01E"'],
+  ['H.264 main', 'video/mp4; codecs="avc1.4D401F"'],
+  ['H.264 high 1080p', 'video/mp4; codecs="avc1.640028"'],
+  ['H.264 high 1080p60', 'video/mp4; codecs="avc1.64002A"'],
+  ['VP9', 'video/webm; codecs="vp09.00.40.08"'],
+  ['AV1', 'video/mp4; codecs="av01.0.08M.08"'],
+  ['HEVC', 'video/mp4; codecs="hvc1.1.6.L120.90"'],
+];
+const AUDIO = [
+  ['AAC', 'audio/mp4; codecs="mp4a.40.2"'],
+  ['HE-AAC', 'audio/mp4; codecs="mp4a.40.5"'],
+  ['Dolby AC-3', 'audio/mp4; codecs="ac-3"'],
+  ['Dolby E-AC-3', 'audio/mp4; codecs="ec-3"'],
+  ['Opus', 'audio/webm; codecs="opus"'],
+];
+
+async function access(opts) {
+  try {
+    const a = await navigator.requestMediaKeySystemAccess(KS, [Object.assign({
+      initDataTypes: ['cenc'],
+      videoCapabilities: [{contentType: VIDEO[2][1], robustness: 'SW_SECURE_CRYPTO'}],
+      audioCapabilities: [{contentType: AUDIO[0][1], robustness: 'SW_SECURE_CRYPTO'}],
+    }, opts)]);
+    return a;
+  } catch (e) { return null; }
+}
+
+(async () => {
+  // Facts from the television, filled in by the command that opened this.
+  for (const [k, v] of Object.entries(FACTS)) row('sys', k, v);
+
+  // What the site sees of the browser.
+  let hints = '';
+  if (navigator.userAgentData) {
+    try {
+      const h = await navigator.userAgentData.getHighEntropyValues(
+        ['platform', 'platformVersion', 'architecture', 'fullVersionList', 'model']);
+      hints = '\nclient hints: ' + h.platform + ' ' + (h.platformVersion || '') + ', ' +
+        (h.architecture || '?') + ', ' +
+        (h.fullVersionList || []).map(b => b.brand + ' ' + b.version).join(' / ');
+    } catch (e) { hints = '\nclient hints: unavailable'; }
+  }
+  $('ua').textContent = 'user agent: ' + navigator.userAgent + hints +
+    '\npage: ' + location.origin + (window.isSecureContext ? ' (secure)' : ' (NOT secure)');
+
+  // Widevine at each security level. Linux has only the software ones.
+  const base = await access({});
+  row('drm', 'Widevine present', yes(!!base), !!base);
+  if (base) {
+    try { await base.createMediaKeys(); row('drm', 'Keys can be made', 'yes', true); }
+    catch (e) { row('drm', 'Keys can be made', 'no: ' + e.name, false); }
+  }
+  for (const r of ['SW_SECURE_CRYPTO', 'SW_SECURE_DECODE', 'HW_SECURE_CRYPTO',
+                   'HW_SECURE_DECODE', 'HW_SECURE_ALL']) {
+    const a = await access({videoCapabilities: [{contentType: VIDEO[2][1], robustness: r}]});
+    row('drm', r, yes(!!a), r.startsWith('SW') ? !!a : undefined);
+  }
+  const persist = await access({persistentState: 'required'});
+  row('drm', 'Persistent state', yes(!!persist));
+  const ident = await access({distinctiveIdentifier: 'required'});
+  row('drm', 'Distinctive identifier', yes(!!ident));
+
+  // Each format, protected (through Widevine) and unprotected.
+  for (const [name, type] of VIDEO) {
+    const a = await access({videoCapabilities: [{contentType: type, robustness: 'SW_SECURE_DECODE'}]});
+    row('enc', name, yes(!!a), name.startsWith('H.264') ? !!a : undefined);
+    const m = window.MediaSource && MediaSource.isTypeSupported(type);
+    row('mse', name, yes(m), name.startsWith('H.264') ? m : undefined);
+  }
+  for (const [name, type] of AUDIO) {
+    const a = await access({videoCapabilities: [{contentType: VIDEO[0][1]}],
+                            audioCapabilities: [{contentType: type}]});
+    row('enc', name, yes(!!a), name === 'AAC' ? !!a : undefined);
+    const m = window.MediaSource && MediaSource.isTypeSupported(type);
+    row('mse', name, yes(m), name === 'AAC' ? m : undefined);
+  }
+
+  // HDCP. Many live channels will only play if the output is protected, and
+  // a player that cannot find out may refuse.
+  if (base) {
+    try {
+      const keys = await base.createMediaKeys();
+      if (!keys.getStatusForPolicy) row('hdcp', 'Can be asked', 'no');
+      for (const v of ['1.0', '1.4', '2.2']) {
+        try { row('hdcp', 'HDCP ' + v, await keys.getStatusForPolicy({minHdcpVersion: v})); }
+        catch (e) { row('hdcp', 'HDCP ' + v, 'error: ' + e.name, false); }
+      }
+    } catch (e) { row('hdcp', 'Keys', 'error: ' + e.name, false); }
+  }
+
+  // The question YouTube's player actually asks before choosing a stream.
+  async function info(label, contentType, width, height, framerate, drm) {
+    const cfg = {type: 'media-source', video: {contentType, width, height,
+                 bitrate: 5000000, framerate}};
+    if (drm) cfg.keySystemConfiguration = {keySystem: KS, video: {robustness: 'SW_SECURE_DECODE'}};
+    try {
+      const r = await navigator.mediaCapabilities.decodingInfo(cfg);
+      row('cap', label, (r.supported ? 'supported' : 'NOT supported') +
+          (r.supported ? (r.smooth ? ', smooth' : ', not smooth') : ''), r.supported);
+    } catch (e) { row('cap', label, 'error: ' + e.name, false); }
+  }
+  await info('H.264 1080p30', VIDEO[2][1], 1920, 1080, 30, false);
+  await info('H.264 1080p60', VIDEO[3][1], 1920, 1080, 60, false);
+  await info('H.264 720p, protected', VIDEO[2][1], 1280, 720, 30, true);
+  await info('H.264 1080p60, protected', VIDEO[3][1], 1920, 1080, 60, true);
+  await info('VP9 1080p, protected', VIDEO[4][1], 1920, 1080, 30, true);
+
+  $('sub').textContent = 'Done. A photo of this screen is enough to diagnose playback. Back closes it.';
+})();
+</script>

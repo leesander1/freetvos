@@ -11,6 +11,7 @@ start from anything but the shell itself and shows nothing when it does not.
 | Pull the picture in from the edges | Overscan, for a television that crops |
 | Output | Where sound goes: the television, headphones, a USB device |
 | Volume, Silence | The system volume, not one application's |
+| Check video playback | A diagnosis, for a service that says a format is not supported; see below |
 | Headphones and remotes | Pair, connect and disconnect Bluetooth devices |
 
 Picture and output changes apply on Enter rather than while cycling. Stepping
@@ -27,6 +28,22 @@ bluez anything. `bluetoothctl` does not answer that question quickly: with no
 adapter it waits for one to appear until something kills it, and a page that
 asks before drawing then never draws. That was a real fault, found by the page
 coming up blank.
+
+### Check video playback
+
+Opens a screen with everything a streaming player asks the browser before it
+plays, inside YouTube TV's own browser setup (its profile, its browser identity
+and its Widevine wiring), since that is what the service sees:
+
+- Widevine at each security level, and whether keys can be made
+- each video and sound format, protected through Widevine and unprotected
+- HDCP output protection, which live channels often require
+- the smooth-playback question YouTube's player asks before choosing a stream
+- the browser identity and client hints the site is told
+- the Chromium, ffmpeg and Widevine versions on the television
+
+A photo of that one screen is enough to tell why a service refuses to play.
+From a terminal, `freetvos-widevine-check [service]` opens it for any service.
 
 ### Not covered
 

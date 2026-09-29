@@ -6,6 +6,7 @@ not while cycling: stepping through screen modes and applying each one in turn
 would black the television out several times on the way past.
 """
 import json
+import subprocess
 
 import tvui
 
@@ -173,6 +174,14 @@ def model(tune) -> list:
         "options": YESNO, "value": "yes" if tune.muted() else "no",
     })
 
+    # A diagnosis rather than a setting, kept here because this is where
+    # someone whose picture will not play goes looking.
+    rows.append({"kind": "header", "text": "Streaming",
+                 "sub": "Why a service says a format is not supported"})
+    rows.append({"kind": "action", "id": "youtubetv", "path": "/playcheck",
+                 "busy": "Opening the check…",
+                 "label": "Check video playback"})
+
     rows.append({"kind": "header", "text": "Headphones and remotes",
                  "sub": "Bluetooth devices this television knows"})
     if not tune.bluetooth_ready():
@@ -258,10 +267,18 @@ def run(tune) -> int:
         return {"message": f"Found {len(nearby)} new" if nearby
                 else "Nothing new found", "rows": rows}
 
+    def do_playcheck(payload):
+        # Its own window over this one; this page stays where it was.
+        subprocess.Popen(["/usr/bin/freetvos-widevine-check",
+                          payload.get("id") or "youtubetv"],
+                         start_new_session=True)
+        return {"message": "The check opens in a moment. Back closes it."}
+
     app.get("/", render)
     app.post("/set", do_set)
     app.post("/device", do_device)
     app.post("/scan", do_scan)
+    app.post("/playcheck", do_playcheck)
     app.post("/noop", lambda _p: {})
     app.run()
     return 0
