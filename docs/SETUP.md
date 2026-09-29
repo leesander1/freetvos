@@ -16,6 +16,23 @@ Two steps and a way out of each:
 Nothing is compulsory. **Skip for now** goes straight to watching, and **Setup**
 on the home screen runs it again whenever you want.
 
+## The time zone sets itself
+
+There is no time zone question. The clock is kept right by chrony, and each
+time a network connection comes up the television asks Fedora's geoip service,
+the one Fedora's own installer uses to guess a time zone, where the connection
+is, and sets the zone from the answer (`freetvos-timezone`, run by a
+NetworkManager dispatcher script). The request goes to
+`geoip.fedoraproject.org` and says nothing but the connection's address.
+
+To choose one by hand, which also stops the lookup:
+
+```bash
+sudo freetvos-timezone set America/Chicago
+sudo freetvos-timezone automatic      # back to following the connection
+freetvos-timezone status
+```
+
 ## It only ever asks once
 
 Finishing writes a stamp to `~/.local/state/freetvos/setup-done`, and so does

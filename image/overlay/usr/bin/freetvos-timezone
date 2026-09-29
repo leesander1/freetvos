@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""Set the television's time zone from where its internet connection is.
+
+The clock itself is kept right by chrony. The time zone was never set at all:
+the installer asks nobody, so the television showed UTC. A television has no
+one to ask either, so this does what Fedora's own installer does to guess one:
+asks Fedora's geoip service, which answers from the connection's address.
+
+  freetvos-timezone auto         look it up and set it, unless one was chosen
+  freetvos-timezone set ZONE     choose one by hand, e.g. America/Chicago; the
+                                 lookup then leaves it alone
+  freetvos-timezone automatic    go back to looking it up
+  freetvos-timezone status       what is set, and how
+
+Run by NetworkManager each time a connection comes up, so it is right from the
+first network joined and follows a television that moves house.
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.request
+from pathlib import Path
+
+SERVICE = os.environ.get("FREETVOS_GEOIP", "https://geoip.fedoraproject.org/city")
+ZONEINFO = Path(os.environ.get("FREETVOS_ZONEINFO", "/usr/share/zoneinfo"))
+CHOSEN = Path(os.environ.get("FREETVOS_TIMEZONE_CHOSEN", "/etc/freetvos/timezone-chosen"))
+TIMEDATECTL = os.environ.get("FREETVOS_TIMEDATECTL", "timedatectl")
+ZONE = re.compile(r"^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+){0,2}$")
+
+
+def valid(zone: str) -> bool:
+    """A zone name, and one this system has the rules for."""
+    return bool(zone and ZONE.match(zone) and (ZONEINFO / zone).is_file())
+
+
+def current() -> str:
+    done = subprocess.run([TIMEDATECTL, "show", "-p", "Timezone", "--value"],
+                          capture_output=True, text=True)
+    return done.stdout.strip()
+
+
+def apply(zone: str) -> bool:
+    if zone == current():
+        return True
+    return subprocess.run([TIMEDATECTL, "set-timezone", zone]).returncode == 0
+
+
+def lookup(timeout: float = 10) -> str:
+    with urllib.request.urlopen(SERVICE, timeout=timeout) as reply:
+        data = json.loads(reply.read(65536))
+    zone = data.get("time_zone") if isinstance(data, dict) else None
+    return zone if isinstance(zone, str) else ""
+
+
+def cmd_auto() -> int:
+    if CHOSEN.exists():
+        print(f"chosen by hand: {current()}")
+        return 0
+    try:
+        zone = lookup()
+    except (OSError, ValueError) as e:
+        print(f"could not look it up: {e}", file=sys.stderr)
+        return 1
+    if not valid(zone):
+        print(f"the lookup gave no usable zone: {zone!r}", file=sys.stderr)
+        return 1
+    if not apply(zone):
+        return 1
+    print(f"time zone: {zone}")
+    return 0
+
+
+def cmd_set(zone: str) -> int:
+    if not valid(zone):
+        print(f"not a time zone: {zone}. Try one like America/Chicago or "
+              "Europe/London; timedatectl list-timezones lists them.",
+              file=sys.stderr)
+        return 2
+    if not apply(zone):
+        return 1
+    CHOSEN.parent.mkdir(parents=True, exist_ok=True)
+    CHOSEN.write_text(zone + "\n")
+    print(f"time zone: {zone}, chosen by hand")
+    return 0
+
+
+def cmd_automatic() -> int:
+    CHOSEN.unlink(missing_ok=True)
+    return cmd_auto()
+
+
+def main() -> int:
+    args = sys.argv[1:]
+    if args == ["auto"]:
+        return cmd_auto()
+    if len(args) == 2 and args[0] == "set":
+        return cmd_set(args[1])
+    if args == ["automatic"]:
+        return cmd_automatic()
+    if args == ["status"]:
+        how = "chosen by hand" if CHOSEN.exists() else "from the connection"
+        print(f"{current() or 'unset'} ({how})")
+        return 0
+    print(__doc__.strip().split("\n\n")[1], file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

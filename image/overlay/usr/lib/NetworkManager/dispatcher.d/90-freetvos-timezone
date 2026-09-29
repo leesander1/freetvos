@@ -1,0 +1,11 @@
+#!/bin/sh
+# Set the time zone from the connection each time one comes up. See
+# freetvos-timezone. In the background, because NetworkManager waits for
+# dispatcher scripts and a slow lookup must not hold up the network.
+case "$2" in
+  up|connectivity-change)
+    systemd-run --no-block --quiet --collect --unit=freetvos-timezone \
+      /usr/bin/freetvos-timezone auto >/dev/null 2>&1 || true
+    ;;
+esac
+exit 0
